@@ -2,10 +2,10 @@
   "domain": "light_calibration",
   "name": "Light Calibration",
   "version": "2.2.0",
-  "documentation": "https://github.com/twkl/ha-light-calibration#readme",
-  "issue_tracker": "https://github.com/twkl/ha-light-calibration/issues",
+  "documentation": "https://github.com/ahmadtawakol/ha-light-calibration#readme",
+  "issue_tracker": "https://github.com/ahmadtawakol/ha-light-calibration/issues",
   "codeowners": [
-    "@twkl"
+    "@ahmadtawakol"
   ],
   "config_flow": true,
   "dependencies": [
