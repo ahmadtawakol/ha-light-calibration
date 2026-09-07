@@ -1,0 +1,140 @@
+start_calibration:
+  name: Start calibration
+  description: Begin a calibration session for a calibrated light.
+  fields:
+    entry_id:
+      name: Config entry
+      description: The calibration entry to act on.
+      required: true
+      selector:
+        text:
+    depth:
+      name: Depth
+      description: quick, standard or thorough.
+      required: false
+      selector:
+        select:
+          options: [colors, quick, standard, standard_color, thorough, thorough_color]
+
+adjust:
+  name: Adjust
+  description: Set the live adjustment values for the current calibration point.
+  fields:
+    entry_id:
+      name: Config entry
+      required: true
+      selector:
+        text:
+    warm_cool:
+      name: Warm / cool
+      description: Kelvin offset.
+      required: false
+      selector:
+        number:
+          min: -1200
+          max: 1200
+          step: 25
+    green_magenta:
+      name: Magenta / green
+      description: Percent green shift; negative is magenta.
+      required: false
+      selector:
+        number:
+          min: -60
+          max: 60
+          step: 1
+    brightness:
+      name: Brightness
+      description: Percent brightness for the light being calibrated.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+    hue_shift:
+      name: Hue shift
+      description: Degrees to rotate the hue by, on a colour step.
+      required: false
+      selector:
+        number:
+          min: -60
+          max: 60
+          step: 1
+    saturation:
+      name: Saturation
+      description: Percent saturation to drive the target at, on a colour step.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+
+save_point:
+  name: Save point and next
+  description: Record the current point and move to the next one.
+  fields:
+    entry_id:
+      name: Config entry
+      required: true
+      selector:
+        text:
+
+previous_point:
+  name: Back one point
+  description: Step back to redo the previous point.
+  fields:
+    entry_id:
+      name: Config entry
+      required: true
+      selector:
+        text:
+
+cancel_calibration:
+  name: Cancel calibration
+  description: Abandon the session; the stored profile is left alone.
+  fields:
+    entry_id:
+      name: Config entry
+      required: true
+      selector:
+        text:
+
+set_reference:
+  name: Set reference light
+  description: Change which light this calibration is matched against.
+  fields:
+    entry_id:
+      name: Config entry
+      required: true
+      selector:
+        text:
+    entity_id:
+      name: Reference light
+      required: true
+      selector:
+        entity:
+          domain: light
+
+clear_profile:
+  name: Clear profile
+  description: Discard the stored calibration, leaving the light uncorrected.
+  fields:
+    entry_id:
+      name: Config entry
+      required: true
+      selector:
+        text:
+
+finish_calibration:
+  name: Finish now
+  description: >-
+    Save the points measured so far and stop. They are merged into the stored
+    profile; anything not revisited is kept.
+  fields:
+    entry_id:
+      name: Config entry
+      required: true
+      selector:
+        text:

@@ -1,0 +1,5 @@
+{
+    "name": "Light Calibration",
+    "render_readme": true,
+    "homeassistant": "2024.12.0"
+}

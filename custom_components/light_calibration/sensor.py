@@ -1,0 +1,57 @@
+"""Where the calibration has got to.
+
+Also the data source for the dialog card, which reads this entity's attributes
+for the current step, the live slider values and the entry_id.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import CONF_POINTS, DOMAIN
+from .entity import CalibrationControlEntity
+from .session import CalibrationSession
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    session: CalibrationSession = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([CalibrationStatus(entry, session)])
+
+
+class CalibrationStatus(CalibrationControlEntity, SensorEntity):
+    _attr_name = "Calibration"
+    _attr_icon = "mdi:eyedropper-variant"
+
+    def __init__(self, entry: ConfigEntry, session: CalibrationSession) -> None:
+        super().__init__(entry, session, "status")
+
+    @property
+    def native_value(self) -> str:
+        if self._session.active:
+            # step_title formats whites and colours differently; never index the
+            # step directly -- it is a dict, and a raised exception in a state
+            # property fails the whole state write.
+            title = self._session.step_title
+            return f"Step {self._session.step_label} - {title}" if title else "Saving"
+        stored = self._entry.data.get(CONF_POINTS) or []
+        if not stored:
+            return "Not calibrated"
+        colors = sum(1 for p in stored if p.get("type") == "color")
+        whites = len(stored) - colors
+        if colors:
+            return f"Calibrated ({whites} whites, {colors} colours)"
+        return f"Calibrated ({whites} whites)"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        attrs = self._session.extra_attributes()
+        stored = self._entry.data.get(CONF_POINTS) or []
+        attrs["stored_points"] = len(stored)
+        attrs["stored_colors"] = sum(1 for p in stored if p.get("type") == "color")
+        return attrs

@@ -1,0 +1,20 @@
+{
+  "domain": "light_calibration",
+  "name": "Light Calibration",
+  "version": "2.1.0",
+  "documentation": "https://github.com/twkl/ha-light-calibration#readme",
+  "issue_tracker": "https://github.com/twkl/ha-light-calibration/issues",
+  "codeowners": [
+    "@twkl"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "light",
+    "http",
+    "frontend",
+    "panel_custom"
+  ],
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "requirements": []
+}

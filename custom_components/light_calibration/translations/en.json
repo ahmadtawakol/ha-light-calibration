@@ -1,0 +1,28 @@
+{
+  "title": "Light Calibration",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Calibrate a light",
+        "description": "Pick a light you trust as the reference, and the light that doesn't match it.\n\nThis creates a calibrated light that takes over the target's entity ID, so everything already pointing at that light keeps working and gets corrected output. The real fixture is renamed with a `_raw` suffix.\n\nCalibration starts as soon as this is created.",
+        "data": {
+          "reference_entity": "Reference light (the one that looks right)",
+          "target_entity": "Light to calibrate",
+          "name": "Name (optional)"
+        }
+      }
+    },
+    "error": {
+      "same_light": "The reference and the light being calibrated have to be two different lights."
+    },
+    "abort": {
+      "already_configured": "That light is already calibrated."
+    },
+    "initiate_flow": {
+      "user": "Add light"
+    },
+    "create_entry": {
+      "default": "Calibrated light created.\n\n[Open the calibration screen](/light-calibration) to match it against your reference light. Pause Adaptive Lighting on both lights first, or it will re-adapt them while you work."
+    }
+  }
+}
