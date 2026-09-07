@@ -510,9 +510,10 @@ const PANEL_STYLE = `
   }
   .item h3 { margin: 0 0 2px; font-size: 1.1rem; font-weight: 500; }
   .meta { color: var(--secondary-text-color); font-size: 0.9rem; }
-  .ref { margin-top: 16px; }
-  .ref label { display: block; font-size: 0.85rem; margin-bottom: 4px;
-               color: var(--secondary-text-color); }
+  .ref, .copy { margin-top: 16px; }
+  .copy[hidden] { display: none; }
+  .ref label, .copy label { display: block; font-size: 0.85rem; margin-bottom: 4px;
+                            color: var(--secondary-text-color); }
   ha-entity-picker { display: block; width: 100%; }
   select {
     width: 100%; padding: 9px; border-radius: 8px; font-size: 0.9rem;
@@ -705,6 +706,10 @@ class LightCalibrationPanel extends HTMLElement {
       <h3></h3>
       <div class="meta"></div>
       <div class="ref"><div class="picker"></div></div>
+      <div class="copy" hidden>
+        <label>Copy calibration from</label>
+        <select class="copyfrom"></select>
+      </div>
       <div class="row">
         <button class="primary calibrate">Calibrate</button>
         <button class="flat toggle" hidden></button>
@@ -736,11 +741,38 @@ class LightCalibrationPanel extends HTMLElement {
       this._hass.callService("switch", "toggle", { entity_id: switchId });
     });
 
+    // Identical fixtures are wrong in the same way, so measuring one and handing
+    // the result to the rest saves a full pass each. Replaces rather than
+    // merges, so it asks first.
+    const copy = el.querySelector(".copyfrom");
+    copy.addEventListener("change", () => {
+      const source = copy.value;
+      copy.value = "";
+      if (!source) return;
+      const src = this._hass.states[source].attributes;
+      const here = this._hass.states[entity].attributes;
+      const summary = src.profile_summary || `${src.stored_points} points`;
+      const mine = here.stored_points > 0
+        ? `\n\n${this._name(here.calibrating)}'s own measurements ` +
+          `(${here.profile_summary}) are discarded.`
+        : "";
+      if (!window.confirm(
+        `Give ${this._name(here.calibrating)} the calibration measured for ` +
+        `${this._name(src.calibrating)} (${summary})?\n\n` +
+        `Only worth it if they are the same model -- a profile describes one ` +
+        `fixture's particular errors.${mine}`)) return;
+      this._hass.callService("light_calibration", "copy_profile", {
+        entry_id: entry_id, source_entry_id: src.entry_id,
+      });
+    });
+
     const item = {
       el,
       title: el.querySelector("h3"),
       meta: el.querySelector(".meta"),
       clear: el.querySelector(".clear"),
+      copyRow: el.querySelector(".copy"),
+      copy,
       pickerSlot: el.querySelector(".picker"),
       picker: null,
       toggle,
@@ -799,6 +831,23 @@ class LightCalibrationPanel extends HTMLElement {
     // Nothing to discard before there is a profile, and offering it next to
     // Calibrate just invites a mis-click.
     item.clear.hidden = !(a.stored_points > 0);
+
+    // Only worth showing when there is something to copy from.
+    const sources = calibrationSensors(this._hass).filter(
+      (e) => e !== entity && this._hass.states[e].attributes.stored_points > 0
+    );
+    item.copyRow.hidden = sources.length === 0;
+    const key = sources.map((e) => e + ":" + this._hass.states[e].attributes.stored_points).join("|");
+    if (sources.length && item.copyKey !== key) {
+      item.copyKey = key;
+      item.copy.innerHTML =
+        `<option value="">Choose a light...</option>` +
+        sources.map((e) => {
+          const sa = this._hass.states[e].attributes;
+          return `<option value="${e}">${this._name(sa.calibrating)} - ` +
+                 `${sa.profile_summary || sa.stored_points + " points"}</option>`;
+        }).join("");
+    }
 
     const sw = this._hass.states[item.switchId];
     if (sw && sw.state !== "unavailable") {

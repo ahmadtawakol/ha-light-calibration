@@ -12,7 +12,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryError
+from homeassistant.exceptions import ConfigEntryError, ServiceValidationError
 from homeassistant.helpers import (
     config_validation as cv,
     device_registry as dr,
@@ -28,7 +28,12 @@ from .const import (
     CONF_TARGET,
     DOMAIN,
 )
-from .calibration import DEPTH_POINTS, TYPE_WHITE, migrate_white_point
+from .calibration import (
+    DEPTH_POINTS,
+    TYPE_WHITE,
+    migrate_white_point,
+    profile_summary,
+)
 from .session import CalibrationSession
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +58,7 @@ SERVICE_SET_REFERENCE = "set_reference"
 SERVICE_CLEAR = "clear_profile"
 SERVICE_FINISH = "finish_calibration"
 SERVICE_COMPARE = "compare"
+SERVICE_COPY = "copy_profile"
 
 _ENTRY = vol.Schema({vol.Required("entry_id"): cv.string})
 _ADJUST = _ENTRY.extend(
@@ -66,6 +72,7 @@ _ADJUST = _ENTRY.extend(
 )
 _START = _ENTRY.extend({vol.Optional("depth"): vol.In(list(DEPTH_POINTS))})
 _SET_REFERENCE = _ENTRY.extend({vol.Required("entity_id"): cv.entity_id})
+_COPY = _ENTRY.extend({vol.Required("source_entry_id"): cv.string})
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -180,6 +187,36 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 entry, data={**entry.data, CONF_REFERENCE: call.data["entity_id"]}
             )
 
+    async def _copy_profile(call: ServiceCall) -> None:
+        """Give one light another's measurements.
+
+        For a room of identical fixtures: they are wrong in the same way, so
+        measuring one and handing the result to the rest saves a pass with the
+        sliders each. It replaces rather than merges -- "copy X onto Y" should
+        leave Y matching X, not some blend of the two.
+        """
+        entry = hass.config_entries.async_get_entry(call.data["entry_id"])
+        source = hass.config_entries.async_get_entry(call.data["source_entry_id"])
+        if entry is None or source is None:
+            raise ServiceValidationError(
+                "One of those calibrated lights no longer exists"
+            )
+        if entry.entry_id == source.entry_id:
+            raise ServiceValidationError("A light cannot be copied onto itself")
+        points = source.data.get(CONF_POINTS) or []
+        if not points:
+            raise ServiceValidationError(f"{source.title} has no calibration to copy")
+
+        hass.config_entries.async_update_entry(
+            # Copied, not shared: the two entries must not end up pointing at the
+            # same dicts, or re-running one would quietly edit the other.
+            entry, data={**entry.data, CONF_POINTS: [dict(p) for p in points]}
+        )
+        _LOGGER.info(
+            "Copied %s's calibration (%s) onto %s",
+            source.title, profile_summary(points), entry.title,
+        )
+
     async def _clear(call: ServiceCall) -> None:
         entry = hass.config_entries.async_get_entry(call.data["entry_id"])
         if entry:
@@ -197,6 +234,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         (SERVICE_COMPARE, _compare, _ENTRY),
         (SERVICE_SET_REFERENCE, _set_reference, _SET_REFERENCE),
         (SERVICE_CLEAR, _clear, _ENTRY),
+        (SERVICE_COPY, _copy_profile, _COPY),
     ):
         if not hass.services.has_service(DOMAIN, name):
             hass.services.async_register(DOMAIN, name, handler, schema=schema)

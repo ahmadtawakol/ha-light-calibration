@@ -152,3 +152,24 @@ compare:
       required: true
       selector:
         text:
+
+copy_profile:
+  name: Copy calibration
+  description: >-
+    Replace one light's calibration with another's. For identical fixtures:
+    they are wrong in the same way, so measuring one and copying the result
+    saves a pass with the sliders on each of the others. The destination's own
+    measurements are discarded.
+  fields:
+    entry_id:
+      name: Destination
+      description: The calibration entry to overwrite.
+      required: true
+      selector:
+        text:
+    source_entry_id:
+      name: Source
+      description: The calibration entry to copy from.
+      required: true
+      selector:
+        text:

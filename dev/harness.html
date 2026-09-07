@@ -68,6 +68,11 @@ const SWITCH = "switch.living_room_light_stand_calibration";
 const TARGET = "light.living_room_light_stand_raw";
 const REFERENCE = "light.bookcase_light_bars";
 
+/* A second, always-calibrated entry. Two entries is the realistic case, and it
+   is what makes the "copy calibration from" control appear at all. */
+const SENSOR2 = "sensor.hallway_downlight_calibration";
+const TARGET2 = "light.hallway_downlight_raw";
+
 /* Matches CalibrationSession.extra_attributes() plus the sensor's own two. */
 const IDLE = {
   entry_id: "01JDEV", active: false, depth: "standard",
@@ -159,11 +164,29 @@ function hass() {
   };
   if (!s.empty) {
     const attrs = { ...IDLE, ...(s.a || {}) };
+    attrs.stored_whites = attrs.stored_points - attrs.stored_colors;
+    attrs.profile_summary = [
+      attrs.stored_whites ? `${attrs.stored_whites} whites` : "",
+      attrs.stored_colors ? `${attrs.stored_colors} colours` : "",
+    ].filter(Boolean).join(", ");
     states[SENSOR] = { entity_id: SENSOR, state: s.state, attributes: attrs };
     states[SWITCH] = { entity_id: SWITCH,
       // The switch is unavailable until there is something to switch.
       state: attrs.stored_points > 0 ? "on" : "unavailable",
       attributes: { friendly_name: "Living Room Light Stand Calibration" } };
+  }
+  if (!s.empty) {
+    states[TARGET2] = { entity_id: TARGET2, state: "on",
+      attributes: { friendly_name: "Hallway Downlight",
+                    supported_color_modes: ["color_temp", "rgb"] } };
+    states[SENSOR2] = { entity_id: SENSOR2, state: "Calibrated (5 whites)",
+      attributes: { ...IDLE, entry_id: "01JDEV2", calibrating: TARGET2,
+                    stored_points: 5, stored_colors: 0, stored_whites: 5,
+                    profile_summary: "5 whites",
+                    friendly_name: "Hallway Downlight Calibration" } };
+    states["switch.hallway_downlight_calibration"] = {
+      entity_id: "switch.hallway_downlight_calibration", state: "on",
+      attributes: { friendly_name: "Hallway Downlight Calibration" } };
   }
   return {
     states,

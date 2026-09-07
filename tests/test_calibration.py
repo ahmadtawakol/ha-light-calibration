@@ -6,6 +6,8 @@ import pytest
 from light_calibration import color_math as cm
 from light_calibration.calibration import (
     COLOR_HUES,
+    count_points,
+    profile_summary,
     DEPTH_LABELS,
     DEPTH_POINTS,
     TYPE_COLOR,
@@ -67,6 +69,45 @@ def test_the_thorough_colour_depth_measures_two_levels_per_hue():
 
 def test_the_colour_points_are_the_six_hue_anchors():
     assert [p["hue"] for p in DEPTH_POINTS["colors"]] == COLOR_HUES
+
+
+# ------------------------------------------------------------ describing a profile
+
+
+def test_profile_summary_counts_both_kinds():
+    profile = CalibrationProfile(
+        [CalibrationPoint(2700, b) for b in range(9)],
+        [ColorPoint(h, 60) for h in COLOR_HUES],
+    )
+    assert count_points(profile.as_list()) == (9, 6)
+    assert profile_summary(profile.as_list()) == "9 whites, 6 colours"
+
+
+def test_profile_summary_omits_what_is_not_there():
+    whites = CalibrationProfile([CalibrationPoint(2700, b) for b in (10, 40, 80)])
+    colours = CalibrationProfile([], [ColorPoint(h, 60) for h in COLOR_HUES])
+    assert profile_summary(whites.as_list()) == "3 whites"
+    assert profile_summary(colours.as_list()) == "6 colours"
+
+
+def test_profile_summary_is_singular_for_one():
+    assert profile_summary([{"type": TYPE_WHITE, "kelvin": 2700, "brightness": 40}]) == (
+        "1 white"
+    )
+    assert profile_summary([{"type": TYPE_COLOR, "hue": 0, "brightness": 60}]) == (
+        "1 colour"
+    )
+
+
+def test_profile_summary_of_no_profile_is_empty():
+    assert profile_summary([]) == ""
+    assert profile_summary(None) == ""
+    assert count_points(None) == (0, 0)
+
+
+def test_counting_treats_untyped_entries_as_whites():
+    """Same back-compat as loading: no type key means it predates colours."""
+    assert count_points([{"kelvin": 2700, "brightness": 40}]) == (1, 0)
 
 
 # --------------------------------------------------------------------- points

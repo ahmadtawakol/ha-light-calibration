@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .calibration import count_points, profile_summary
 from .const import CONF_POINTS, DOMAIN
 from .entity import CalibrationControlEntity
 from .session import CalibrationSession
@@ -42,19 +43,16 @@ class CalibrationStatus(CalibrationControlEntity, SensorEntity):
                 return "Saving"
             what = "Checking" if self._session.verifying else "Step"
             return f"{what} {self._session.step_label} - {title}"
-        stored = self._entry.data.get(CONF_POINTS) or []
-        if not stored:
-            return "Not calibrated"
-        colors = sum(1 for p in stored if p.get("type") == "color")
-        whites = len(stored) - colors
-        if colors:
-            return f"Calibrated ({whites} whites, {colors} colours)"
-        return f"Calibrated ({whites} whites)"
+        summary = profile_summary(self._entry.data.get(CONF_POINTS))
+        return f"Calibrated ({summary})" if summary else "Not calibrated"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs = self._session.extra_attributes()
         stored = self._entry.data.get(CONF_POINTS) or []
+        whites, colors = count_points(stored)
         attrs["stored_points"] = len(stored)
-        attrs["stored_colors"] = sum(1 for p in stored if p.get("type") == "color")
+        attrs["stored_colors"] = colors
+        attrs["stored_whites"] = whites
+        attrs["profile_summary"] = profile_summary(stored)
         return attrs

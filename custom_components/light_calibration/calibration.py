@@ -237,6 +237,24 @@ def migrate_white_point(data: dict) -> dict:
     return migrated
 
 
+def count_points(points: list[dict] | None) -> tuple[int, int]:
+    """How many whites and how many colours a stored profile holds."""
+    stored = points or []
+    colors = sum(1 for p in stored if p.get("type") == TYPE_COLOR)
+    return (len(stored) - colors, colors)
+
+
+def profile_summary(points: list[dict] | None) -> str:
+    """A stored profile in words: "9 whites, 6 colours". Empty for no profile."""
+    whites, colors = count_points(points)
+    parts = []
+    if whites:
+        parts.append(f"{whites} white{'' if whites == 1 else 's'}")
+    if colors:
+        parts.append(f"{colors} colour{'' if colors == 1 else 's'}")
+    return ", ".join(parts)
+
+
 def _hue_gap(a: float, b: float) -> float:
     """Shortest distance between two hues, in degrees."""
     d = abs(a - b) % 360.0

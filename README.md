@@ -108,6 +108,18 @@ Per calibrated light:
 Removing a config entry gives the original light its entity ID back, and
 unhides it.
 
+## Identical fixtures
+
+Two units of the same model are usually wrong in the same way, so there is no
+need to measure both. Calibrate one, then pick it from **Copy calibration
+from** on the other's card — it takes the first light's measurements wholesale,
+which is the difference between eight minutes and none.
+
+It replaces rather than merges: copying X onto Y leaves Y matching X, not some
+blend of the two. Only worth doing between fixtures of the same model, since a
+profile describes one particular fixture's errors. There is a `copy_profile`
+service for doing it from a script.
+
 ## Re-running
 
 Running calibration again **fine-tunes rather than resets**. Each step is seeded
@@ -145,6 +157,7 @@ All take an `entry_id`.
 | `cancel_calibration` | Abandon; the stored profile is untouched |
 | `set_reference` | Change the reference light |
 | `clear_profile` | Discard the profile, leaving the light uncorrected |
+| `copy_profile` | Replace one light's calibration with another's |
 
 ## Developing
 
