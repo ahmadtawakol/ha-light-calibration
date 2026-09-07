@@ -33,12 +33,15 @@ class CalibrationStatus(CalibrationControlEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        if self._session.active:
+        if self._session.active or self._session.verifying:
             # step_title formats whites and colours differently; never index the
             # step directly -- it is a dict, and a raised exception in a state
             # property fails the whole state write.
             title = self._session.step_title
-            return f"Step {self._session.step_label} - {title}" if title else "Saving"
+            if not title:
+                return "Saving"
+            what = "Checking" if self._session.verifying else "Step"
+            return f"{what} {self._session.step_label} - {title}"
         stored = self._entry.data.get(CONF_POINTS) or []
         if not stored:
             return "Not calibrated"

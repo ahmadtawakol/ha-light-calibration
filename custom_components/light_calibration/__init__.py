@@ -11,8 +11,13 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers import config_validation as cv, entity_registry as er
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers import (
+    config_validation as cv,
+    device_registry as dr,
+    entity_registry as er,
+)
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -23,7 +28,7 @@ from .const import (
     CONF_TARGET,
     DOMAIN,
 )
-from .calibration import DEPTH_POINTS
+from .calibration import DEPTH_POINTS, TYPE_WHITE, migrate_white_point
 from .session import CalibrationSession
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,6 +52,7 @@ SERVICE_CANCEL = "cancel_calibration"
 SERVICE_SET_REFERENCE = "set_reference"
 SERVICE_CLEAR = "clear_profile"
 SERVICE_FINISH = "finish_calibration"
+SERVICE_COMPARE = "compare"
 
 _ENTRY = vol.Schema({vol.Required("entry_id"): cv.string})
 _ADJUST = _ENTRY.extend(
@@ -159,6 +165,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
         if session := _session(call):
             await session.async_finish()
 
+    async def _compare(call: ServiceCall) -> None:
+        if session := _session(call):
+            await session.async_compare()
+
     async def _cancel(call: ServiceCall) -> None:
         if session := _session(call):
             await session.async_cancel()
@@ -184,6 +194,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         (SERVICE_BACK, _back, _ENTRY),
         (SERVICE_CANCEL, _cancel, _ENTRY),
         (SERVICE_FINISH, _finish, _ENTRY),
+        (SERVICE_COMPARE, _compare, _ENTRY),
         (SERVICE_SET_REFERENCE, _set_reference, _SET_REFERENCE),
         (SERVICE_CLEAR, _clear, _ENTRY),
     ):
@@ -191,19 +202,63 @@ def _async_register_services(hass: HomeAssistant) -> None:
             hass.services.async_register(DOMAIN, name, handler, schema=schema)
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Bring a profile measured against the old tint model up to date.
+
+    Tint used to change a colour's brightness as a side effect, and the
+    brightness dialled alongside absorbed the difference. Now the two are
+    independent, so every stored point that carries a tint has to be restated or
+    it would come out both the wrong colour and the wrong brightness.
+    """
+    if entry.version != 1:
+        return False
+    if entry.minor_version < 2:
+        points = entry.data.get(CONF_POINTS) or []
+        migrated = [
+            migrate_white_point(p) if p.get("type", TYPE_WHITE) == TYPE_WHITE else p
+            for p in points
+        ]
+        changed = sum(1 for a, b in zip(points, migrated) if a != b)
+        if changed:
+            _LOGGER.info(
+                "%s: restated %d of %d calibration points for the new tint model. "
+                "The colours should look as they did; a Quick re-run will "
+                "fine-tune anything that drifted",
+                entry.title, changed, len(points),
+            )
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_POINTS: migrated}, minor_version=2
+        )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a calibrated light from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     await _async_register_card(hass)
     _async_register_services(hass)
-    await _async_prepare_takeover(hass, entry)
+    if not await _async_prepare_takeover(hass, entry):
+        raise ConfigEntryError(
+            f"{entry.data.get(CONF_ORIGINAL_ID)} is not in the entity registry, so "
+            "its entity_id cannot be taken over. The light has to be one Home "
+            "Assistant can rename -- a YAML light or a light group cannot be."
+        )
+    _async_hide_raw(hass, entry)
     hass.data[DOMAIN][entry.entry_id] = CalibrationSession(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _async_adopt_area(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # A reload throws the session away, and with it the snapshot that puts the
+    # lights back -- so anything that updates the entry mid-calibration (setting
+    # a reference, clearing the profile) would strand both lights at whatever
+    # step they were on. Cancel first, while both are still reachable.
+    session: CalibrationSession | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if session and session.active:
+        await session.async_cancel()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
@@ -217,32 +272,111 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if not original or not renamed:
         return
     registry = er.async_get(hass)
-    if registry.async_get(renamed) is None:
+    raw = registry.async_get(renamed)
+    if raw is None:
         return
     if registry.async_get(original) is not None:
         registry.async_update_entity(original, new_entity_id=f"{original}_removing")
-    registry.async_update_entity(renamed, new_entity_id=original)
+    updates: dict = {"new_entity_id": original}
+    if raw.hidden_by is er.RegistryEntryHider.INTEGRATION:
+        updates["hidden_by"] = None      # only ever unhide our own hiding
+    registry.async_update_entity(renamed, **updates)
     _LOGGER.info("Restored %s to the original light", original)
+
+
+@callback
+def _async_hide_raw(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Keep the displaced real light out of the pickers.
+
+    Two near-identical lights everywhere is the main confusion this integration
+    creates, and the ``_raw`` one is an implementation detail -- hidden it still
+    works and is still reachable, it just stops being offered.
+
+    Runs on every setup rather than only at takeover, so entries created before
+    this existed get hidden too. Marked INTEGRATION rather than USER so removal
+    can tell our hiding from the user's and undo only our own.
+    """
+    renamed = entry.data.get(CONF_RENAMED_ID)
+    if not renamed:
+        return
+    raw = er.async_get(hass).async_get(renamed)
+    if raw is None or raw.hidden_by is not None:
+        return
+    er.async_get(hass).async_update_entity(
+        renamed, hidden_by=er.RegistryEntryHider.INTEGRATION
+    )
+    _LOGGER.info("Hid %s; %s is the one to use", renamed, entry.data.get(CONF_ORIGINAL_ID))
+
+
+@callback
+def _async_effective_area(hass: HomeAssistant, entity_id: str) -> str | None:
+    """The area an entity actually shows up in.
+
+    An entity usually has no area of its own and inherits its device's, so both
+    have to be consulted -- reading only ``entry.area_id`` finds nothing for most
+    real lights.
+    """
+    entity = er.async_get(hass).async_get(entity_id)
+    if entity is None:
+        return None
+    if entity.area_id:
+        return entity.area_id
+    if entity.device_id:
+        device = dr.async_get(hass).async_get(entity.device_id)
+        if device:
+            return device.area_id
+    return None
+
+
+@callback
+def _async_adopt_area(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Put the calibrated light where the light it replaced was.
+
+    The virtual light lives on its own device, which starts with no area, so
+    without this a calibrated light silently drops out of its room -- area
+    cards, "turn off the kitchen", and voice all stop finding it.
+
+    Set on the device so the status sensor and switch come along too, and only
+    when it has no area yet, so moving it afterwards sticks.
+    """
+    renamed = entry.data.get(CONF_RENAMED_ID)
+    if not renamed:
+        return
+    area_id = _async_effective_area(hass, renamed)
+    if not area_id:
+        return
+    devices = dr.async_get(hass)
+    device = devices.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
+    if device is None or device.area_id is not None:
+        return
+    devices.async_update_device(device.id, area_id=area_id)
+    _LOGGER.info("Placed %s in area %s, following %s", entry.title, area_id, renamed)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def _async_prepare_takeover(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Move the real light aside so the virtual one can claim its entity_id."""
+async def _async_prepare_takeover(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Move the real light aside so the virtual one can claim its entity_id.
+
+    Returns False when the takeover cannot happen, which has to fail the whole
+    entry: carrying on would leave the virtual light claiming an entity_id the
+    real one still holds -- core renames ours to _2 -- while it drives a target
+    that never existed. Every command then goes nowhere, silently.
+    """
     original = entry.data.get(CONF_ORIGINAL_ID)
     renamed = entry.data.get(CONF_RENAMED_ID)
     if not original or not renamed or original == renamed:
-        return
+        return False
 
     registry = er.async_get(hass)
     if registry.async_get(renamed) is not None:
-        return  # already moved
+        return True  # already moved
 
     if registry.async_get(original) is None:
         _LOGGER.warning("Cannot take over %s: entity not in the registry", original)
-        return
+        return False
 
     registry.async_update_entity(original, new_entity_id=renamed)
     _LOGGER.info("Moved %s aside to %s for calibration takeover", original, renamed)
@@ -251,3 +385,4 @@ async def _async_prepare_takeover(hass: HomeAssistant, entry: ConfigEntry) -> No
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, CONF_TARGET: renamed}
         )
+    return True

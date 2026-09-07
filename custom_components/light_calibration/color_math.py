@@ -17,9 +17,11 @@ def clamp(value: float, low: float, high: float) -> float:
 def kelvin_to_rgb(kelvin: float) -> tuple[int, int, int]:
     """Approximate a blackbody colour as sRGB.
 
-    Tanner Helland's approximation. Good enough for lamp matching and, more
-    importantly, it is the same curve Adaptive Lighting uses, so a calibrated
-    light lines up with an uncalibrated one driven from the same kelvin.
+    Tanner Helland's approximation, which is also what Home Assistant's own
+    ``color_temperature_to_rgb`` computes. Reimplemented rather than imported so
+    this module stays dependency-free, and pinned to core's output by the tests,
+    so a calibrated light lines up with an uncalibrated one driven from the same
+    kelvin.
     """
     kelvin = clamp(kelvin, MIN_KELVIN, MAX_KELVIN)
     t = kelvin / 100.0
@@ -104,31 +106,92 @@ def blackbody_distance(rgb: tuple[int, int, int]) -> float:
 WHITE_TOLERANCE = 40.0
 
 
+# Rec.709 luminance weights, the same ones sRGB is built on.
+_LUMA = (0.2126, 0.7152, 0.0722)
+
+
+def _to_linear(value: float) -> float:
+    """Undo the sRGB transfer function. Channel maths has to happen in light."""
+    c = value / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _to_srgb(value: float) -> float:
+    c = clamp(value, 0.0, 1.0)
+    encoded = c * 12.92 if c <= 0.0031308 else 1.055 * (c ** (1 / 2.4)) - 0.055
+    return encoded * 255.0
+
+
+def relative_luminance(rgb: tuple[int, int, int]) -> float:
+    """How bright a colour reads, 0..1, independent of its hue."""
+    return sum(w * _to_linear(c) for w, c in zip(_LUMA, rgb))
+
+
+def _peak(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Scale so the largest channel is 255 -- the chromaticity on its own."""
+    peak = max(rgb) or 1
+    return tuple(min(255, int(round(c * 255.0 / peak))) for c in rgb)
+
+
 def apply_tint(rgb: tuple[int, int, int], tint: float) -> tuple[int, int, int]:
     """Shift a colour along the green/magenta axis.
 
-    ``tint`` is a percentage: positive adds green, negative adds magenta
-    (i.e. removes green). This is the axis ordinary "warm/cool" cannot reach,
-    and the one cheap RGB fixtures are usually wrong on -- a bulb that renders
-    warm white with a purple cast is simply short of green.
+    ``tint`` is a percentage: positive adds green, negative adds magenta. This
+    is the axis ordinary "warm/cool" cannot reach, and the one cheap RGB
+    fixtures are usually wrong on -- a bulb that renders warm white with a
+    purple cast is simply short of green. Scaling green in linear light and
+    renormalising is the whole operation; red and blue are left alone, so it
+    moves along one axis and one axis only.
+
+    It deliberately does *not* try to hold brightness. Adding green genuinely
+    makes a colour brighter: green carries 71% of luminance and the peak channel
+    is pinned to the drive level, so no chromaticity is both greener and equally
+    bright. An earlier model tried to compensate inside the colour and only
+    moved the problem around -- brightness still swung by up to 29% across the
+    slider. It is cancelled where it can actually be cancelled, in the
+    brightness command: see ``tint_brightness_factor``.
+    """
+    if not tint:
+        return rgb
+    linear = [_to_linear(c) for c in rgb]
+    linear[1] = max(0.0, linear[1] * (1.0 + tint / 100.0))
+    peak = max(linear) or 1.0
+    return tuple(int(round(_to_srgb(c / peak))) for c in linear)
+
+
+def tint_brightness_factor(rgb: tuple[int, int, int], tint: float) -> float:
+    """How much brighter the tinted colour renders at the same drive level.
+
+    Divide a brightness command by this and the tint slider stops changing how
+    bright the light looks, which is what lets the eye judge tint and brightness
+    one at a time instead of chasing them round in circles.
+    """
+    before = relative_luminance(_peak(rgb))
+    if before <= 0:
+        return 1.0
+    return relative_luminance(apply_tint(rgb, tint)) / before
+
+
+def apply_tint_v1(rgb: tuple[int, int, int], tint: float) -> tuple[int, int, int]:
+    """The tint model used before luminance was held constant.
+
+    Kept only so stored profiles measured against it can be migrated -- see
+    ``async_migrate_entry``. Nothing else should call this.
     """
     if not tint:
         return rgb
     red, green, blue = rgb
-    factor = 1.0 + (tint / 100.0)
-    green = clamp(green * factor, 0, 255)
-    # Compensate red/blue slightly so overall level stays put; a pure green
-    # boost would also read as "brighter", which would fight the brightness axis.
+    green = clamp(green * (1.0 + tint / 100.0), 0, 255)
     comp = 1.0 - (tint / 100.0) * 0.25
-    red = clamp(red * comp, 0, 255)
-    blue = clamp(blue * comp, 0, 255)
-    return (int(round(red)), int(round(green)), int(round(blue)))
+    return (
+        int(round(clamp(red * comp, 0, 255))),
+        int(round(green)),
+        int(round(clamp(blue * comp, 0, 255))),
+    )
 
 
 def rgb_to_hs(rgb: tuple[int, int, int]) -> tuple[float, float]:
     """Hue in degrees and saturation in percent. Level is carried separately."""
-    import colorsys
-
     h, _, s = _hls(rgb)
     return h, s
 
@@ -162,3 +225,12 @@ def hs_to_rgb(hue: float, saturation: float) -> tuple[int, int, int]:
 def corrected_rgb(kelvin: float, kelvin_offset: float, tint: float) -> tuple[int, int, int]:
     """The RGB command that makes a miscalibrated light look like ``kelvin``."""
     return apply_tint(kelvin_to_rgb(kelvin + kelvin_offset), tint)
+
+
+def corrected_brightness_factor(kelvin: float, kelvin_offset: float, tint: float) -> float:
+    """The companion to ``corrected_rgb``: divide brightness by this.
+
+    Cancels the brightness the tint brings with it, so the two axes stay
+    independent both while calibrating and when driving the light afterwards.
+    """
+    return tint_brightness_factor(kelvin_to_rgb(kelvin + kelvin_offset), tint)

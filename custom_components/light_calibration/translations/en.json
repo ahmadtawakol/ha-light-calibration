@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Calibrate a light",
-        "description": "Pick a light you trust as the reference, and the light that doesn't match it.\n\nThis creates a calibrated light that takes over the target's entity ID, so everything already pointing at that light keeps working and gets corrected output. The real fixture is renamed with a `_raw` suffix.\n\nCalibration starts as soon as this is created.",
+        "description": "Pick a light you trust as the reference, and the light that doesn't match it.\n\nThis creates a calibrated light that takes over the target's entity ID, so everything already pointing at that light keeps working and gets corrected output. The real fixture is renamed with a `_raw` suffix and hidden.\n\nTunable-white lights can be calibrated too -- they get colour temperature and brightness, but not tint or colours, which they have no way to show.\n\nPick a reference that covers the colour temperatures you care about -- steps it can't reach are skipped rather than measured wrongly.\n\nCalibration starts as soon as this is created.",
         "data": {
           "reference_entity": "Reference light (the one that looks right)",
           "target_entity": "Light to calibrate",
@@ -13,7 +13,11 @@
       }
     },
     "error": {
-      "same_light": "The reference and the light being calibrated have to be two different lights."
+      "same_light": "The reference and the light being calibrated have to be two different lights.",
+      "not_registered": "That light can't be taken over. The calibrated light claims its entity ID, so Home Assistant has to be able to rename the original -- a YAML light or a light group can't be renamed. Pick a light that came from an integration.",
+      "raw_light": "That's the real fixture behind a light that's already calibrated. Pick the calibrated light instead, or a different one.",
+      "already_calibrated": "That light is already calibrated. Open its Configure page to re-run or fine-tune it.",
+      "no_color_control": "That light has no colour control at all -- it can't be set to a colour or a colour temperature, so there's nothing to calibrate."
     },
     "abort": {
       "already_configured": "That light is already calibrated."
@@ -22,7 +26,7 @@
       "user": "Add light"
     },
     "create_entry": {
-      "default": "Calibrated light created.\n\n[Open the calibration screen](/light-calibration) to match it against your reference light. Pause Adaptive Lighting on both lights first, or it will re-adapt them while you work."
+      "default": "**[Start calibrating &rarr;](/light-calibration)**\n\nThat opens the guided matching straight away -- pick how thorough you want to be and the sliders take over from there.\n\nPause anything that adapts these lights automatically first, or it will re-adapt them while you work. You can also get back here any time from this entry's **Configure** button."
     }
   }
 }

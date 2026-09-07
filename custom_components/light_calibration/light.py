@@ -14,13 +14,15 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, STATE_ON
+from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
+from . import capability
 from .calibration import CalibrationProfile
+from .color_math import rgb_to_kelvin
 from .session import CalibrationSession
 from .const import (
     CONF_ORIGINAL_ID,
@@ -52,7 +54,6 @@ class CalibratedLight(LightEntity):
 
     _attr_has_entity_name = False
     _attr_should_poll = False
-    _attr_supported_color_modes = {ColorMode.COLOR_TEMP, ColorMode.RGB}
     _attr_supported_features = LightEntityFeature.TRANSITION
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -158,6 +159,29 @@ class CalibratedLight(LightEntity):
             self._attr_color_temp_kelvin = state.attributes.get(ATTR_COLOR_TEMP_KELVIN)
 
     @property
+    def supported_color_modes(self) -> set[ColorMode]:
+        """Advertise only what the fixture behind us can actually do.
+
+        A tunable-white fixture gets colour temperature alone -- claiming RGB
+        would put a colour wheel on a light that cannot show a colour.
+        """
+        if capability.supports_color(self.hass, self._target):
+            return {ColorMode.COLOR_TEMP, ColorMode.RGB}
+        return {ColorMode.COLOR_TEMP}
+
+    @property
+    def available(self) -> bool:
+        """Follow the real fixture.
+
+        This entity has taken over the original entity_id, so it is the only
+        thing anything points at. If the fixture drops off the network that has
+        to surface here -- reporting "off" instead tells every automation and
+        dashboard the light is fine when it is not there at all.
+        """
+        state = self.hass.states.get(self._target)
+        return state is not None and state.state != STATE_UNAVAILABLE
+
+    @property
     def min_color_temp_kelvin(self) -> int:
         """Advertise the reference light's range, not the target's.
 
@@ -190,45 +214,53 @@ class CalibratedLight(LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
         brightness_pct = max(1.0, min(100.0, brightness / 255.0 * 100.0))
+        profile = self._active_profile
+        color_capable = capability.supports_color(self.hass, self._target)
+        data: dict[str, Any] = {ATTR_ENTITY_ID: self._target}
 
-        if ATTR_RGB_COLOR in kwargs:
+        if ATTR_RGB_COLOR in kwargs and color_capable:
             requested_rgb = tuple(kwargs[ATTR_RGB_COLOR])
-            rgb, out_pct = self._active_profile.command_for_rgb(
-                requested_rgb, brightness_pct
-            )
+            rgb, out_pct = profile.command_for_rgb(requested_rgb, brightness_pct)
+            data[ATTR_RGB_COLOR] = list(rgb)
             self._attr_color_mode = ColorMode.RGB
             self._attr_rgb_color = requested_rgb
             self._attr_color_temp_kelvin = None
         else:
-            kelvin = kwargs.get(
-                ATTR_COLOR_TEMP_KELVIN, self._attr_color_temp_kelvin or 2700
-            )
-            rgb, out_pct = self._active_profile.command_for_kelvin(
-                kelvin, brightness_pct
-            )
+            # A tunable-white fixture cannot show a colour, so a colour request
+            # is resolved to the nearest colour temperature here rather than
+            # being left to core's rgb-to-kelvin fallback, which would drop the
+            # correction and shift the result by hundreds of kelvin.
+            if ATTR_RGB_COLOR in kwargs:
+                kelvin = rgb_to_kelvin(tuple(kwargs[ATTR_RGB_COLOR]))
+            else:
+                kelvin = kwargs.get(
+                    ATTR_COLOR_TEMP_KELVIN, self._attr_color_temp_kelvin or 2700
+                )
+            if color_capable:
+                rgb, out_pct = profile.command_for_kelvin(kelvin, brightness_pct)
+                data[ATTR_RGB_COLOR] = list(rgb)
+            else:
+                out_kelvin, out_pct = profile.kelvin_command_for_kelvin(
+                    kelvin, brightness_pct
+                )
+                data[ATTR_COLOR_TEMP_KELVIN] = out_kelvin
             self._attr_color_mode = ColorMode.COLOR_TEMP
             self._attr_color_temp_kelvin = int(kelvin)
             self._attr_rgb_color = None
 
         self._attr_brightness = int(round(brightness))
         self._attr_is_on = True
-
-        data: dict[str, Any] = {
-            ATTR_ENTITY_ID: self._target,
-            ATTR_RGB_COLOR: list(rgb),
-            "brightness_pct": out_pct,
-        }
+        data["brightness_pct"] = out_pct
         transition = kwargs.get(ATTR_TRANSITION, DEFAULT_TRANSITION)
         if transition:
             data[ATTR_TRANSITION] = transition
 
         _LOGGER.debug(
-            "%s: asked for %s -> driving %s with rgb=%s brightness=%s%%",
+            "%s: asked for %s -> driving %s with %s",
             self.entity_id,
             kwargs,
             self._target,
-            rgb,
-            out_pct,
+            {k: v for k, v in data.items() if k != ATTR_ENTITY_ID},
         )
         await self.hass.services.async_call(
             "light", "turn_on", data, blocking=False, context=self._context

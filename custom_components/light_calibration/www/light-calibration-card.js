@@ -10,13 +10,20 @@
  * a colour by eye miserable -- hence a real dialog with continuous sliders.
  */
 
+/* Ordered so the first entry is the right default for a light nobody has
+   calibrated yet -- it is what a fresh dialog selects. Colours-only is a top-up
+   for a light that already has whites, so it sits at the bottom rather than
+   being the thing a first run falls into.
+
+   Third field: needs a fixture that can show a colour. A tunable-white one is
+   only offered the white-only depths. */
 const DEPTHS = [
-  ["colors", "Colours only - 6 hues, ~5 min"],
-  ["quick", "Quick - 5 whites, ~3 min"],
-  ["standard", "Standard - 9 whites, ~8 min"],
-  ["standard_color", "Standard + colours - 9 whites, 6 hues, ~13 min"],
-  ["thorough", "Thorough - 15 whites, ~15 min"],
-  ["thorough_color", "Thorough + colours - 15 whites, 6 hues, ~20 min"],
+  ["standard", "Standard - 9 whites, ~8 min", false],
+  ["quick", "Quick - 5 whites, ~3 min", false],
+  ["standard_color", "Standard + colours - 9 whites, 6 hues, ~13 min", true],
+  ["thorough", "Thorough - 15 whites, ~15 min", false],
+  ["thorough_color", "Thorough + colours - 15 whites, 12 hues, ~25 min", true],
+  ["colors", "Colours only - 6 hues, ~5 min", true],
 ];
 
 /* Whites and colours need different adjustments: warm/cool and tint are
@@ -54,6 +61,16 @@ const BUTTONS = `
     padding: 9px 12px; font-size: 0.95rem; cursor: pointer; border-radius: 8px;
     font-family: inherit;
   }
+  button.flat:hover:not(:disabled) { background: rgba(127,127,127,0.12); }
+  /* Used constantly mid-step, so it needs to read as a control rather than as
+     one more link in a row of links. */
+  button.tonal {
+    background: rgba(127,127,127,0.14); border: none; color: var(--primary-text-color);
+    padding: 9px 14px; font-size: 0.95rem; cursor: pointer; border-radius: 8px;
+    font-family: inherit;
+  }
+  button.tonal:hover:not(:disabled) { background: rgba(127,127,127,0.22); }
+  button.quiet { color: var(--secondary-text-color); }
   button:disabled { opacity: 0.4; cursor: default; }
 `;
 
@@ -75,12 +92,16 @@ const DIALOG_STYLE = `
     padding: 24px;
     font-family: var(--paper-font-body1_-_font-family, inherit);
   }
-  .dialog h2 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 400; }
+  .titlebar { display: flex; align-items: center; gap: 12px; margin: 0 0 4px; }
+  .dialog h2 { margin: 0; font-size: 1.35rem; font-weight: 400; flex: 1; }
   .sub { color: var(--secondary-text-color); font-size: 0.9rem; margin-bottom: 20px; }
+  /* What the fixture is being driven with. Sat inline before the instructions it
+     read as a bullet point; out here it reads as a sample. */
   .swatch {
-    display: inline-block; width: 14px; height: 14px; border-radius: 50%;
-    vertical-align: middle; margin-right: 6px; border: 1px solid rgba(127,127,127,0.4);
+    flex: 0 0 auto; width: 34px; height: 34px; border-radius: 8px;
+    border: 1px solid rgba(127,127,127,0.35); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
   }
+  .swatch[hidden] { display: none; }
   .field { margin: 18px 0; }
   .field[hidden] { display: none; }
   .field-head {
@@ -97,13 +118,26 @@ const DIALOG_STYLE = `
     color: var(--primary-text-color);
     border: 1px solid var(--divider-color, #ccc); font-family: inherit;
   }
-  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px;
+             flex-wrap: wrap; align-items: center; }
   .actions .left { margin-right: auto; }
+  /* Five controls in one row is snug on a phone; tighten before wrapping. */
+  @media (max-width: 430px) {
+    .actions { gap: 2px; }
+    .actions button { padding: 9px 7px; font-size: 0.88rem; }
+    .dialog { padding: 20px 16px; }
+  }
   .progress {
     height: 4px; border-radius: 2px; background: var(--divider-color, #ddd);
     overflow: hidden; margin-bottom: 20px;
   }
   .progress > div { height: 100%; background: var(--primary-color); transition: width .2s; }
+  .warn {
+    margin: 0 0 16px; font-size: 0.85rem; color: var(--secondary-text-color);
+    border-left: 3px solid var(--warning-color, #ffa726); padding-left: 12px;
+  }
+  .warn[hidden] { display: none; }
+  button.compare[aria-pressed="true"] { opacity: 0.5; }
 `;
 
 /* ------------------------------------------------------------------ dialog */
@@ -129,8 +163,24 @@ class LightCalibrationDialog extends HTMLElement {
     return st ? st.attributes : {};
   }
 
+  /* Entity ids are for automations, not for people. The displaced fixture keeps
+     its name through the rename, so this reads back the same thing the user
+     called the light before it was calibrated. */
+  _name(entityId) {
+    if (!entityId) return "";
+    const st = this._hass && this._hass.states[entityId];
+    if (st && st.attributes.friendly_name) return st.attributes.friendly_name;
+    return entityId.replace(/^[^.]+\./, "").replace(/_raw$/, "").replace(/_/g, " ");
+  }
+
   get _sliders() {
-    return this._attrs.step_type === "color" ? COLOR_SLIDERS : WHITE_SLIDERS;
+    const a = this._attrs;
+    if (a.step_type === "color") return COLOR_SLIDERS;
+    // Tint is a green/magenta shift off the blackbody curve, which a
+    // tunable-white fixture cannot render at all.
+    return a.supports_color === false
+      ? WHITE_SLIDERS.filter((s) => s.key !== "green_magenta")
+      : WHITE_SLIDERS;
   }
 
   open(entityId) {
@@ -145,6 +195,23 @@ class LightCalibrationDialog extends HTMLElement {
     this.shadowRoot.querySelector(".scrim").classList.remove("open");
   }
 
+  /* Every way out of the dialog has to go through here. An active session has
+     both lights parked on the current step, and only cancel_calibration puts
+     them back -- closing the dialog on its own would leave the reference stuck
+     at whatever colour temperature it was last driven to. */
+  _dismiss() {
+    if (this._attrs.active) this._call("cancel_calibration");
+    this.close();
+  }
+
+  connectedCallback() {
+    window.addEventListener("keydown", this._onKey);
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener("keydown", this._onKey);
+  }
+
   _build() {
     const style = document.createElement("style");
     style.textContent = DIALOG_STYLE;
@@ -153,8 +220,12 @@ class LightCalibrationDialog extends HTMLElement {
     scrim.innerHTML = `
       <div class="dialog" role="dialog" aria-modal="true">
         <div class="progress"><div id="bar" style="width:0%"></div></div>
-        <h2 id="title"></h2>
+        <div class="titlebar">
+          <h2 id="title"></h2>
+          <div class="swatch" id="swatch" title="What the light is being sent" hidden></div>
+        </div>
         <div class="sub" id="sub"></div>
+        <div class="warn" id="skipped" hidden></div>
         <div id="setup">
           <div class="field">
             <div class="field-head"><span class="lbl">How thorough</span></div>
@@ -178,9 +249,10 @@ class LightCalibrationDialog extends HTMLElement {
           ).join("")}
         </div>
         <div class="actions">
-          <button class="flat left" id="cancel">Cancel</button>
+          <button class="flat quiet left" id="cancel">Cancel</button>
+          <button class="flat quiet" id="finish">Finish now</button>
           <button class="flat" id="back">Back</button>
-          <button class="flat" id="finish">Finish now</button>
+          <button class="tonal compare" id="compare" title="Flash the light back to no correction, then return">Compare</button>
           <button class="primary" id="next">Start calibration</button>
         </div>
       </div>`;
@@ -191,14 +263,13 @@ class LightCalibrationDialog extends HTMLElement {
       scrim, title: q("#title"), sub: q("#sub"), bar: q("#bar"),
       setup: q("#setup"), sliders: q("#sliders"), depth: q("#depth"),
       cancel: q("#cancel"), back: q("#back"), next: q("#next"),
-      finish: q("#finish"),
+      finish: q("#finish"), compare: q("#compare"), skipped: q("#skipped"),
+      swatch: q("#swatch"),
     };
 
-    this._els.cancel.addEventListener("click", () => {
-      if (this._attrs.active) this._call("cancel_calibration");
-      this.close();
-    });
+    this._els.cancel.addEventListener("click", () => this._dismiss());
     this._els.back.addEventListener("click", () => this._call("previous_point"));
+    this._els.compare.addEventListener("click", () => this._call("compare"));
     this._els.finish.addEventListener("click", () => this._call("finish_calibration"));
     this._els.next.addEventListener("click", () => {
       if (this._done) { this.close(); return; }
@@ -206,12 +277,13 @@ class LightCalibrationDialog extends HTMLElement {
       else this._call("start_calibration", { depth: this._els.depth.value });
     });
     scrim.addEventListener("click", (e) => {
-      if (e.target === scrim) this.close();
+      if (e.target === scrim) this._dismiss();
     });
+    // Added and removed in connected/disconnectedCallback, not here, so it does
+    // not outlive the element.
     this._onKey = (e) => {
-      if (e.key === "Escape" && scrim.classList.contains("open")) this.close();
+      if (e.key === "Escape" && scrim.classList.contains("open")) this._dismiss();
     };
-    window.addEventListener("keydown", this._onKey);
 
     for (const s of ALL_SLIDERS) {
       const input = q(`#in-${s.key}`);
@@ -239,56 +311,117 @@ class LightCalibrationDialog extends HTMLElement {
     this._wasActive = active;
 
     if (this._done) {
+      // Everything that belongs to a running session has to be put away here,
+      // or the saved screen keeps whichever bits were showing when it ended.
       this._els.setup.style.display = "none";
       this._els.sliders.style.display = "none";
       this._els.back.style.display = "none";
       this._els.cancel.style.display = "none";
       this._els.finish.style.display = "none";
+      this._els.compare.style.display = "none";
+      this._els.swatch.hidden = true;
+      this._els.skipped.hidden = true;
       this._els.next.textContent = "Done";
       this._els.bar.style.width = "100%";
-      this._els.title.textContent = "Calibration saved";
-      const colours = a.stored_colors
-        ? ` (${a.stored_colors} of them hues)` : "";
+      this._els.title.textContent = `${this._name(a.calibrating)} is calibrated`;
+      const whites = (a.stored_points || 0) - (a.stored_colors || 0);
+      const colours = a.stored_colors ? ` and ${a.stored_colors} colours` : "";
       this._els.sub.innerHTML =
-        `${a.stored_points || 0} points stored${colours}, merged into the profile - ` +
-        `anything you did not revisit was kept. The lights have been put back the ` +
-        `way they were.<br><br>Toggle <b>Calibration</b> to flip between raw and ` +
-        `corrected output and see the difference.`;
+        `Stored ${whites} whites${colours}. Anything you did not revisit this ` +
+        `time was kept, and both lights have been put back the way they were.` +
+        `<br><br>Everything already pointing at this light is now getting ` +
+        `corrected output. Turn the <b>Calibration</b> switch off to see what it ` +
+        `looked like before.`;
       return;
+    }
+
+    // Only offer depths the fixture can actually be measured at.
+    const allowColor = a.supports_color !== false;
+    if (this._allowColor !== allowColor) {
+      this._allowColor = allowColor;
+      this._els.depth.innerHTML = DEPTHS.filter(([, , needsColor]) => allowColor || !needsColor)
+        .map(([v, l]) => `<option value="${v}">${l}</option>`)
+        .join("");
+    }
+
+    // The lights are parked on a step whenever a session is running, so the
+    // compare flash is meaningful right through the check as well.
+    const verifying = !!a.verifying;
+    this._els.compare.style.display = active ? "" : "none";
+    this._els.compare.setAttribute("aria-pressed", a.comparing ? "true" : "false");
+    this._els.compare.disabled = !!a.comparing;
+
+    const skipped = a.skipped || [];
+    this._els.skipped.hidden = skipped.length === 0;
+    if (skipped.length) {
+      this._els.skipped.textContent =
+        `Skipped ${skipped.join("; ")}. Those points are left as they were.`;
     }
 
     this._els.cancel.style.display = "";
     this._els.setup.style.display = active ? "none" : "block";
-    this._els.sliders.style.display = active ? "block" : "none";
+    // Nothing to adjust while checking: this is the finished profile, replayed.
+    this._els.sliders.style.display = active && !verifying ? "block" : "none";
     this._els.back.style.display = active ? "" : "none";
-    this._els.next.textContent = active ? "Save point and next" : "Start calibration";
-    this._els.back.disabled = !active || (a.step || 1) <= 1;
+    this._els.next.textContent = verifying
+      ? "Looks right"
+      : active ? "Save point and next" : "Start calibration";
+    this._els.back.textContent = verifying ? "Fix that one" : "Back";
+    this._els.back.disabled = !active || (!verifying && (a.step || 1) <= 1);
+    this._els.finish.textContent = verifying ? "Save now" : "Finish now";
     // Only offer an early finish once something has actually been measured.
     this._els.finish.style.display =
-      active && (a.measured_this_run || 0) > 0 ? "" : "none";
+      active && (verifying || (a.measured_this_run || 0) > 0) ? "" : "none";
 
-    // Swap the slider set for colour steps.
+    // Swap the slider set for colour steps. The fields are built once in a
+    // fixed order, so they have to be re-sorted as well as shown and hidden --
+    // otherwise a colour step leads with Brightness, which is the last thing you
+    // should reach for and the opposite of what the instructions say.
     const shown = this._sliders;
     for (const s of ALL_SLIDERS) {
       this.shadowRoot.querySelector(`#field-${s.key}`).hidden =
         !shown.some((x) => x.key === s.key);
     }
+    // Only when the set actually changes: appendChild moves live DOM nodes, and
+    // moving a range input mid-drag drops the pointer capture, so re-sorting on
+    // every state update would make the sliders impossible to drag.
+    const order = shown.map((x) => x.key).join(",");
+    if (this._sliderOrder !== order) {
+      this._sliderOrder = order;
+      for (const x of shown) {
+        this._els.sliders.appendChild(this.shadowRoot.querySelector(`#field-${x.key}`));
+      }
+    }
 
-    if (active) {
-      const swatch = a.sending_rgb
-        ? `<span class="swatch" style="background: rgb(${a.sending_rgb.join(",")})"></span>`
-        : "";
+    this._els.swatch.hidden = !(active && a.sending_rgb);
+    if (active && a.sending_rgb) {
+      this._els.swatch.style.background = `rgb(${a.sending_rgb.join(",")})`;
+    }
+
+    if (verifying) {
+      this._els.title.textContent =
+        `Check ${a.verify_step} of ${a.verify_total} - ${a.step_title || ""}`;
+      this._els.sub.textContent = a.instructions || "";
+      this._els.bar.style.width = "100%";
+    } else if (active) {
       this._els.title.textContent = `Step ${a.step} of ${a.total} - ${a.step_title || ""}`;
-      this._els.sub.innerHTML = `${swatch}${a.instructions || ""}`;
+      this._els.sub.textContent = a.instructions || "";
       this._els.bar.style.width = `${((a.step - 1) / a.total) * 100}%`;
     } else {
-      this._els.title.textContent = "Calibrate this light";
-      const already = (a.stored_points || 0) > 0
-        ? ` The sliders start from your stored calibration, so this fine-tunes it rather than starting over.`
-        : "";
-      this._els.sub.textContent =
-        `Matching ${a.calibrating || ""} against ${a.reference_light || "the reference"}. ` +
-        `Pause Adaptive Lighting on both first, or it will fight you.${already}`;
+      const stored = (a.stored_points || 0) > 0;
+      const light = this._name(a.calibrating);
+      this._els.title.textContent = stored ? `Fine-tune ${light}` : `Calibrate ${light}`;
+      this._els.sub.innerHTML = stored
+        ? `Each step starts from what you measured last time, so this adjusts ` +
+          `from where you left off rather than starting over. Anything you do ` +
+          `not revisit is kept.<br><br>Both lights will change while you work -- ` +
+          `pause anything that adapts them automatically first, or it will fight you.`
+        : `Both lights will be driven to the same setting, one step at a time. ` +
+          `Adjust until they look the same to you, then move on -- there is no ` +
+          `right answer but your own eyes.<br><br>Matching against ` +
+          `<b>${this._name(a.reference_light) || "the reference"}</b>. Pause ` +
+          `anything that adapts these lights automatically first, or it will ` +
+          `fight you.`;
       this._els.bar.style.width = "0%";
     }
 
@@ -347,6 +480,10 @@ function calibrationSensors(hass) {
 
 /* ------------------------------------------------------------------- panel */
 
+/* Home Assistant's own add-integration dialog, opened straight onto this
+   domain, so adding a second light is not a hunt through Settings. */
+const ADD_URL = "/config/integrations/dashboard/add?domain=light_calibration";
+
 const PANEL_STYLE = `
   ${BUTTONS}
   :host { display: block; background: var(--primary-background-color); min-height: 100vh; }
@@ -385,7 +522,18 @@ const PANEL_STYLE = `
   }
   .row { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
   .row .spacer { flex: 1; }
-  .empty { color: var(--secondary-text-color); }
+  .empty { color: var(--secondary-text-color); line-height: 1.5; }
+  .item h3 { margin: 0 0 2px; font-size: 1.15rem; font-weight: 500; }
+  .item .meta code {
+    background: var(--secondary-background-color, #f0f0f0);
+    padding: 1px 5px; border-radius: 4px; font-size: 0.85em;
+  }
+  .add { display: flex; justify-content: center; margin: 4px 0 24px; }
+  .add a {
+    color: var(--primary-color); text-decoration: none; font-size: 0.95rem;
+    padding: 9px 16px; border-radius: 8px;
+  }
+  .add a:hover { background: rgba(127,127,127,0.12); }
   .note {
     margin-top: 8px; font-size: 0.85rem; color: var(--secondary-text-color);
     border-left: 3px solid var(--warning-color, #ffa726); padding-left: 12px;
@@ -493,9 +641,12 @@ class LightCalibrationPanel extends HTMLElement {
         this._empty = true;
         this._items.clear();
         this._body.innerHTML =
-          `<div class="item empty">No calibrated lights yet. Add one from
-           Settings &rarr; Devices &amp; services &rarr; Add integration &rarr;
-           Light Calibration.</div>`;
+          `<div class="item empty">
+             <h3>No lights calibrated yet</h3>
+             <p>Pick a light you trust as the reference and a light that doesn't
+             match it, and you'll be matching them by eye a few seconds later.</p>
+           </div>
+           <div class="add"><a href="${ADD_URL}">+ Calibrate a light</a></div>`;
       }
       return;
     }
@@ -513,6 +664,10 @@ class LightCalibrationPanel extends HTMLElement {
         this._items.set(entity, item);
         this._body.appendChild(item.el);
       }
+      const add = document.createElement("div");
+      add.className = "add";
+      add.innerHTML = `<a href="${ADD_URL}">+ Calibrate another light</a>`;
+      this._body.appendChild(add);
     }
     for (const [entity, item] of this._items) this._updateItem(entity, item);
 
@@ -532,6 +687,14 @@ class LightCalibrationPanel extends HTMLElement {
     }
   }
 
+  /* Entity ids are for automations, not for people. */
+  _name(entityId) {
+    if (!entityId) return "";
+    const st = this._hass && this._hass.states[entityId];
+    if (st && st.attributes.friendly_name) return st.attributes.friendly_name;
+    return entityId.replace(/^[^.]+\./, "").replace(/_raw$/, "").replace(/_/g, " ");
+  }
+
   _buildItem(entity) {
     const a = this._hass.states[entity].attributes;
     const entry_id = a.entry_id;
@@ -547,15 +710,21 @@ class LightCalibrationPanel extends HTMLElement {
         <button class="flat toggle" hidden></button>
         <div class="spacer"></div>
         <button class="flat clear">Clear profile</button>
-      </div>
-      <div class="note">Pause Adaptive Lighting on both lights before calibrating,
-        or it will re-adapt them every 180s while you work.</div>`;
+      </div>`;
 
-    el.querySelector(".calibrate").addEventListener("click", () => {
+    const calibrate = el.querySelector(".calibrate");
+    calibrate.addEventListener("click", () => {
       this._dialog.hass = this._hass;
       this._dialog.open(entity);
     });
     el.querySelector(".clear").addEventListener("click", () => {
+      // Throwing away a profile costs another pass with the sliders, so make it
+      // deliberate rather than a mis-click next to Calibrate.
+      const name = this._name(this._hass.states[entity].attributes.calibrating);
+      if (!window.confirm(
+        `Discard the calibration for ${name}?\n\n` +
+        `It goes back to uncorrected output, and measuring it again means ` +
+        `another pass with the sliders.`)) return;
       this._hass.callService("light_calibration", "clear_profile", { entry_id });
     });
 
@@ -571,6 +740,7 @@ class LightCalibrationPanel extends HTMLElement {
       el,
       title: el.querySelector("h3"),
       meta: el.querySelector(".meta"),
+      clear: el.querySelector(".clear"),
       pickerSlot: el.querySelector(".picker"),
       picker: null,
       toggle,
@@ -618,8 +788,17 @@ class LightCalibrationPanel extends HTMLElement {
   _updateItem(entity, item) {
     const st = this._hass.states[entity];
     const a = st.attributes;
-    item.title.textContent = a.friendly_name || entity;
-    item.meta.innerHTML = `${st.state} &middot; correcting <code>${a.calibrating || ""}</code>`;
+    item.title.textContent = this._name(a.calibrating) || a.friendly_name || entity;
+    item.el.querySelector(".calibrate").textContent =
+      a.stored_points > 0 ? "Fine-tune" : "Start calibration";
+    // The id worth showing is the one everything else points at -- the calibrated
+    // light -- not the renamed fixture hiding behind it.
+    const drives = (a.calibrating || "").replace(/_raw$/, "");
+    item.meta.innerHTML = `${st.state} &middot; <code>${drives}</code>`;
+
+    // Nothing to discard before there is a profile, and offering it next to
+    // Calibrate just invites a mis-click.
+    item.clear.hidden = !(a.stored_points > 0);
 
     const sw = this._hass.states[item.switchId];
     if (sw && sw.state !== "unavailable") {

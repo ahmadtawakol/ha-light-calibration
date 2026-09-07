@@ -138,3 +138,17 @@ finish_calibration:
       required: true
       selector:
         text:
+
+compare:
+  name: Compare
+  description: >-
+    Briefly drive the light with no correction at all, then return to the
+    current setting. Matching by eye is far easier across a switch than across
+    a gap.
+  fields:
+    entry_id:
+      name: Config entry
+      description: The calibration entry to act on.
+      required: true
+      selector:
+        text:

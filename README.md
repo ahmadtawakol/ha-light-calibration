@@ -2,7 +2,7 @@
 
 Two bulbs of the same model, sent the same settings, do not produce the same
 light. Cheap fixtures are worse: one runs green, another runs magenta, a third
-is a third dimmer than the rest at the same percentage. Adaptive Lighting or a
+is a third dimmer than the rest at the same percentage. An automation or a
 scene will happily send them identical commands, and the room still looks wrong.
 
 This integration fixes that by **calibrating a light against one you trust**,
@@ -10,9 +10,9 @@ using nothing but your eyes. No colorimeter, no extra hardware, no external
 software.
 
 It creates a **virtual light entity that takes over the original's entity ID**,
-so everything already pointing at that light — scenes, Adaptive Lighting,
-automations, dashboards, voice — keeps working unchanged and starts getting
-corrected output.
+so everything already pointing at that light — scenes, automations,
+dashboards, voice — keeps working unchanged and starts getting corrected
+output.
 
 ## How calibration works
 
@@ -28,6 +28,16 @@ drag, with no submit button.
 green/magenta (a tint), and brightness. **Colour steps** give you hue shift,
 saturation, and brightness.
 
+Moving the tint does not change how bright the light looks. Adding green
+genuinely makes a colour brighter — green carries most of what the eye reads as
+brightness — so that is taken back out of the brightness command automatically.
+Otherwise the two sliders fight and you chase them round in circles.
+
+**Compare** flashes the light back to no correction at all for a moment, then
+returns. A difference that is invisible while you stare at two lights is obvious
+the moment one of them changes, so this is the quickest way to tell whether an
+adjustment is helping.
+
 | Depth | Points | Roughly |
 |---|---|---|
 | Colours only | 6 hues | 5 min |
@@ -35,7 +45,20 @@ saturation, and brightness.
 | Standard | 9 whites | 8 min |
 | Standard + colours | 9 whites, 6 hues | 13 min |
 | Thorough | 15 whites | 15 min |
-| Thorough + colours | 15 whites, 6 hues | 20 min |
+| Thorough + colours | 15 whites, 12 hues | 25 min |
+
+Steps your reference light cannot show are skipped rather than measured
+against whatever it clamps to — several presets ask for 2000 K and plenty of
+bulbs stop at 2700 K. The dialog says which were dropped.
+
+At the end a few of the measured points are replayed with the finished profile
+applied, so you see the result as a whole before it is saved. If one is wrong,
+go back and redo it; nothing measured is lost either way.
+
+**Tunable-white lights** are calibrated too, on the axes they actually have:
+colour temperature and brightness. Tint and the colour steps are not offered,
+because a fixture with no colour control has no way to render either — so only
+the white depths appear for one.
 
 When you finish, the reference light is put back exactly as it was.
 
@@ -44,11 +67,20 @@ When you finish, the reference light is put back exactly as it was.
 Corrections are interpolated, not looked up, so any request lands somewhere
 sensible:
 
-- **Whites** interpolate over the (Kelvin, brightness) plane by inverse-distance
-  weighting, with both axes normalised so neither dominates.
+- **Whites** are fitted locally over the (Kelvin, brightness) plane: a plane
+  through the nearby measurements, weighted by distance. That follows a trend
+  instead of sagging between measurements, and averages out the scatter that
+  matching by eye inevitably leaves.
+- **Brightness distance is perceptual.** 10% to 20% is about three times the
+  visible step of 70% to 80%, so measurements are not smeared together at the
+  dim end — which is the end cheap fixtures get wrong.
+- **Outside the measured points the correction holds** at the nearest edge
+  rather than being extrapolated. A fitted trend runs away fast once it leaves
+  the data, and nobody measured a correction out there anyway.
 - **Colours** interpolate between the two measured hues either side, the short
   way around the wheel — so red blends magenta and yellow rather than being
-  dragged by green on the far side.
+  dragged by green on the far side — and between brightness levels within each
+  hue, where more than one was measured.
 
 An incoming request is routed by **how far it sits from the blackbody curve**. A
 near-white RGB value is treated as a colour temperature and corrected along the
@@ -64,14 +96,17 @@ with their hue untouched and only brightness is corrected.
 
 Per calibrated light:
 
-- `light.<original_id>` — the virtual light. It claims the original entity ID;
-  the real light is renamed aside and driven behind the scenes.
+- `light.<original_id>` — the virtual light. It claims the original entity ID,
+  and inherits the area the original was in. The real light is renamed to
+  `<id>_raw`, hidden, and driven behind the scenes; it still works and is still
+  reachable, it just stops being offered in pickers and dashboards.
 - `switch.<name>_calibration` — turn the correction off to A/B it against raw
   output. Flipping it re-applies immediately, so you can see the difference on
   a live light.
 - `sensor.<name>_calibration` — status, e.g. "Calibrated (9 whites, 6 colours)".
 
-Removing a config entry gives the original light its entity ID back.
+Removing a config entry gives the original light its entity ID back, and
+unhides it.
 
 ## Re-running
 
@@ -106,15 +141,32 @@ All take an `entry_id`.
 | `save_point` | Record and advance |
 | `previous_point` | Step back |
 | `finish_calibration` | Save what has been measured and stop |
+| `compare` | Flash the light to uncorrected output and back |
 | `cancel_calibration` | Abandon; the stored profile is untouched |
 | `set_reference` | Change the reference light |
 | `clear_profile` | Discard the profile, leaving the light uncorrected |
+
+## Developing
+
+`dev/harness.html` renders the frontend against a mock Home Assistant in an
+ordinary browser, so the dialog can be worked on without a deploy. See
+[`dev/README.md`](dev/README.md). Nothing outside `custom_components/` is
+installed by HACS.
+
+Tests for the colour maths and the interpolation run offline, with no Home
+Assistant checkout:
+
+```bash
+uv run --with pytest pytest tests/
+```
 
 ## Notes
 
 - The correction is applied to what the light is *sent*. It cannot make a
   fixture exceed its own limits — asking for 1800 K from a bulb whose floor is
   2000 K still gives 2000 K.
+- A light with no colour control at all — on/off, or brightness only — cannot
+  be calibrated, and is rejected when you try to add it.
 - Calibration is only as good as the reference. It matches lights to each
   other, not to a colorimetric standard.
 - The frontend URL contains a hash of the file's contents. Home Assistant is

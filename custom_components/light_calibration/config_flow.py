@@ -19,7 +19,9 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
-from homeassistant.helpers import selector
+from homeassistant.helpers import entity_registry as er, selector
+
+from .capability import color_modes, is_calibratable
 
 from .const import (
     CONF_NAME,
@@ -46,6 +48,7 @@ class LightCalibrationConfigFlow(ConfigFlow, domain=DOMAIN):
     """Pair a light that looks wrong with one that looks right."""
 
     VERSION = 1
+    MINOR_VERSION = 2
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -56,6 +59,8 @@ class LightCalibrationConfigFlow(ConfigFlow, domain=DOMAIN):
             target = user_input[CONF_TARGET]
             if reference == target:
                 errors["base"] = "same_light"
+            elif problem := self._problem_with(target):
+                errors["base"] = problem
             else:
                 await self.async_set_unique_id(f"{DOMAIN}_{target}")
                 self._abort_if_unique_id_configured()
@@ -85,6 +90,31 @@ class LightCalibrationConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
         )
+
+    def _problem_with(self, target: str) -> str | None:
+        """Why this light cannot be calibrated, if it cannot.
+
+        Caught here rather than at setup because every one of these fails in a
+        way that is hard to see from the outside: a light that cannot be
+        renamed leaves two entities fighting over one entity_id, and one with no
+        colour behaviour at all just quietly does nothing.
+        """
+        if er.async_get(self.hass).async_get(target) is None:
+            # The virtual light claims this entity_id, so the real one has to be
+            # renamed out of the way first. A YAML light or a light group has no
+            # registry entry to rename.
+            return "not_registered"
+
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if entry.data.get(CONF_RENAMED_ID) == target:
+                return "raw_light"
+            if entry.data.get(CONF_ORIGINAL_ID) == target:
+                return "already_calibrated"
+
+        modes = color_modes(self.hass, target)
+        if modes and not is_calibratable(modes):
+            return "no_color_control"
+        return None
 
     def _default_name(self, target: str) -> str:
         state = self.hass.states.get(target)
