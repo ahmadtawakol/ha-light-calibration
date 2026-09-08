@@ -410,7 +410,7 @@ class LightCalibrationDialog extends HTMLElement {
     } else {
       const stored = (a.stored_points || 0) > 0;
       const light = this._name(a.calibrating);
-      this._els.title.textContent = stored ? `Fine-tune ${light}` : `Calibrate ${light}`;
+      this._els.title.textContent = stored ? `Re-Calibrate ${light}` : `Calibrate ${light}`;
       this._els.sub.innerHTML = stored
         ? `Each step starts from what you measured last time, so this adjusts ` +
           `from where you left off rather than starting over. Anything you do ` +
@@ -654,10 +654,17 @@ const PANEL_STYLE = `
      shadowed card: ha-input-search, appearance="outlined", 40px tall with an
      8px radius. The 2026 --ha-* tokens carry a fallback each, since a var()
      that resolves to nothing takes the whole declaration with it. */
+  /* Sticks under the 56px app header, the way Home Assistant's own list pages
+     keep their search bar in reach. Needs the page background of its own: it is
+     scrolling over cards, not with them. */
   .toolbar {
+    position: sticky; top: 56px; z-index: 1;
     padding: 12px 16px;
+    background: var(--primary-background-color);
+    border-bottom: 1px solid var(--divider-color, rgba(127,127,127,0.2));
     display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
   }
+  .body { padding-top: 16px; }
   .search {
     flex: 1 1 220px; display: flex; align-items: center; height: 40px;
     padding: 0 var(--ha-space-2, 8px);
@@ -752,9 +759,12 @@ const PANEL_STYLE = `
     transition: border-color 180ms ease-in-out;
   }
   /* A calibrated light is the thing this page is about, so it gets picked out
-     of the grid by its edge rather than by another badge inside it. */
+     of the grid by its edge and a wash of the accent colour -- faint enough to
+     read as a tint rather than as a state. */
   .item.calibrated {
     border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 5%,
+      var(--ha-card-background, var(--card-background-color, #fff)));
   }
   /* Measured against home-assistant/frontend: ha-tile-icon, ha-tile-info and
      ha-control-switch. Laid out square rather than in a row, because these sit
@@ -849,6 +859,8 @@ const PANEL_STYLE = `
   /* details modal */
   .section { margin: 18px 0; }
   .section > label.tiny { margin-bottom: 5px; }
+  /* A stated fact rather than a control -- see _renderDetails. */
+  .dvalue { font-size: 0.95rem; color: var(--primary-text-color); }
   .state-row {
     display: flex; align-items: center; gap: 10px; padding: 10px 0;
     border-bottom: 1px solid var(--divider-color, #e0e0e0);
@@ -1047,11 +1059,11 @@ class LightCalibrationPanel extends HTMLElement {
         </div>
         <div class="section dref">
           <label class="tiny">Reference light</label>
-          <div class="dpick"></div>
+          <div class="dvalue drefname"></div>
         </div>
         <div class="section dcopy" hidden>
           <label class="tiny">Copy calibration from</label>
-          <select class="dcopyfrom"></select>
+          <div class="dcopypick"></div>
         </div>
         <div class="section dmeasure">
           <button class="flat dshow">Show measurements</button>
@@ -1082,8 +1094,6 @@ class LightCalibrationPanel extends HTMLElement {
     });
     details.querySelector(".dclear").addEventListener(
       "click", () => this._clearProfile(this._detailsEntity));
-    details.querySelector(".dcopyfrom").addEventListener(
-      "change", (e) => this._copyFrom(this._detailsEntity, e.target));
     details.querySelector(".dshow").addEventListener(
       "click", () => this._toggleMeasurements(details));
 
@@ -1354,37 +1364,47 @@ class LightCalibrationPanel extends HTMLElement {
     await this._mountAddPicker(skip, this._addPicked[step]);
   }
 
-  /* ``only`` narrows the picker to an explicit list instead of hiding a few --
-     every step asks for a light, so every step gets the same control. */
-  async _mountAddPicker(skip, value, only) {
+  /* Every "which light?" question in the panel gets this one control: the add
+     flow's steps and the details dialog's copy control. ``only`` narrows it to
+     an explicit list instead of hiding a few. Rebuilt on each mount, so it
+     never hands back an answer to a different question and its exclusions are
+     never stale. */
+  async _mountPicker(holder, { value, skip, only, onChange } = {}) {
     const native = await this._pickerReady;
-    const holder = this._adder.querySelector(".pick");
-    // Rebuilt each step, so it never hands back an answer to a different
-    // question and its exclusions are never stale.
     holder.replaceChildren();
+    let control;
     if (native) {
-      const picker = document.createElement("ha-entity-picker");
-      picker.hass = this._hass;
-      picker.includeDomains = ["light"];
-      picker.allowCustomEntity = false;
-      if (only) picker.includeEntities = only;
-      else picker.excludeEntities = [...skip].filter(Boolean);
-      picker.value = value || "";
-      holder.appendChild(picker);
-      return;
+      control = document.createElement("ha-entity-picker");
+      control.hass = this._hass;
+      control.includeDomains = ["light"];
+      control.allowCustomEntity = false;
+      if (only) control.includeEntities = only;
+      else control.excludeEntities = [...(skip || [])].filter(Boolean);
+      control.value = value || "";
+      if (onChange) control.addEventListener(
+        "value-changed", (e) => onChange(e.detail.value, control));
+    } else {
+      const ids = only
+        ? only.slice()
+        : Object.keys(this._hass.states)
+            .filter((e) => e.startsWith("light.") && !(skip && skip.has(e)));
+      control = document.createElement("select");
+      control.innerHTML =
+        `<option value="">Choose a light...</option>` +
+        ids.sort()
+          .map((e) => `<option value="${e}"${e === value ? " selected" : ""}>` +
+                      `${this._name(e)}</option>`)
+          .join("");
+      if (onChange) control.addEventListener(
+        "change", (e) => onChange(e.target.value, control));
     }
-    const ids = only
-      ? only.slice()
-      : Object.keys(this._hass.states)
-          .filter((e) => e.startsWith("light.") && !skip.has(e));
-    const select = document.createElement("select");
-    select.innerHTML =
-      `<option value="">Choose a light...</option>` +
-      ids.sort()
-        .map((e) => `<option value="${e}"${e === value ? " selected" : ""}>` +
-                    `${this._name(e)}</option>`)
-        .join("");
-    holder.appendChild(select);
+    holder.appendChild(control);
+    return control;
+  }
+
+  _mountAddPicker(skip, value, only) {
+    return this._mountPicker(
+      this._adder.querySelector(".pick"), { skip, value, only });
   }
 
   /* The calibrated lights, keyed by the light itself rather than by the sensor
@@ -1638,25 +1658,14 @@ class LightCalibrationPanel extends HTMLElement {
   /* Only offered on a light with nothing to lose. Once one is calibrated,
      replacing its measurements is a thing you go looking for, not something
      sitting next to the button you press every day. */
-  _copySources(entity) {
-    return calibrationSensors(this._hass).filter(
-      (e) => e !== entity && this._hass.states[e].attributes.stored_points > 0
-    );
+  _copyLights(entity) {
+    const map = this._calibratedLights();
+    const a = this._hass.states[entity] && this._hass.states[entity].attributes;
+    if (a) map.delete((a.calibrating || "").replace(/_raw$/, ""));
+    return map;
   }
 
-  _fillCopyOptions(select, sources) {
-    select.innerHTML =
-      `<option value="">Choose a light...</option>` +
-      sources.map((e) => {
-        const sa = this._hass.states[e].attributes;
-        return `<option value="${e}">${this._name(sa.calibrating)} - ` +
-               `${sa.profile_summary || sa.stored_points + " points"}</option>`;
-      }).join("");
-  }
-
-  _copyFrom(entity, select) {
-    const other = select.value;
-    select.value = "";
+  _copyFrom(entity, other) {
     if (!other) return;
     const to = this._hass.states[entity].attributes;
     const from = this._hass.states[other].attributes;
@@ -1714,45 +1723,14 @@ class LightCalibrationPanel extends HTMLElement {
     return st ? st.attributes : null;
   }
 
-  async _openDetails(entity) {
+  _openDetails(entity) {
     this._detailsEntity = entity;
     const box = this._details.querySelector(".measurements");
     box.hidden = true;
     this._details.querySelector(".dshow").textContent = "Show measurements";
+    this._copyKey = null;
     this._details.classList.add("open");
     this._renderDetails();
-
-    const holder = this._details.querySelector(".dpick");
-    holder.replaceChildren();
-    const native = await this._pickerReady;
-    const a = this._detailsAttrs();
-    if (!a) return;
-    const exclude = [a.calibrating, (a.calibrating || "").replace(/_raw$/, "")];
-    const set = (value) => {
-      if (!value || value === this._detailsAttrs().reference_light) return;
-      this._hass.callService("light_calibration", "set_reference",
-        { entry_id: a.entry_id, entity_id: value });
-    };
-    if (native) {
-      const picker = document.createElement("ha-entity-picker");
-      picker.hass = this._hass;
-      picker.includeDomains = ["light"];
-      picker.excludeEntities = exclude;
-      picker.allowCustomEntity = false;
-      picker.value = a.reference_light || "";
-      picker.addEventListener("value-changed", (e) => set(e.detail.value));
-      holder.appendChild(picker);
-      return;
-    }
-    const select = document.createElement("select");
-    select.innerHTML = Object.keys(this._hass.states)
-      .filter((e) => e.startsWith("light.") && !exclude.includes(e))
-      .sort()
-      .map((e) => `<option value="${e}"` +
-                  `${e === a.reference_light ? " selected" : ""}>` +
-                  `${this._name(e)}</option>`).join("");
-    select.addEventListener("change", (e) => set(e.target.value));
-    holder.appendChild(select);
   }
 
   _closeDetails() {
@@ -1776,20 +1754,39 @@ class LightCalibrationPanel extends HTMLElement {
     const on = sw && sw.state === "on";
     const toggle = d.querySelector(".dtoggle");
     toggle.hidden = !calibrated;
-    toggle.textContent = on ? "Turn off" : "Turn on";
+    toggle.textContent = on ? "Disable Calibration" : "Enable Calibration";
     d.querySelector(".dstate").textContent = !calibrated
       ? "Nothing measured yet"
       : on ? "Applied" : "Off -- the light is running uncorrected";
 
+    // A record of what this light was measured against, not a live setting:
+    // swapping it would leave measurements describing a reference that is no
+    // longer there. Re-calibrating is how you change it.
+    d.querySelector(".drefname").textContent =
+      this._name(a.reference_light) || "None set";
+
     // Hidden on the card once a light is calibrated, but still reachable here.
-    const sources = this._copySources(this._detailsEntity);
-    const copyBox = d.querySelector(".dcopy");
-    copyBox.hidden = sources.length === 0;
-    if (sources.length) this._fillCopyOptions(d.querySelector(".dcopyfrom"), sources);
+    // Rebuilt only when the set of sources actually changes: this runs on every
+    // state update, and re-mounting would shut a menu the pointer is in.
+    const sources = this._copyLights(this._detailsEntity);
+    d.querySelector(".dcopy").hidden = sources.size === 0;
+    const key = [...sources.keys()].sort().join(",");
+    if (sources.size && key !== this._copyKey) {
+      this._copyKey = key;
+      this._mountPicker(d.querySelector(".dcopypick"), {
+        only: [...sources.keys()],
+        onChange: (value, control) => {
+          control.value = "";
+          if (sources.has(value)) {
+            this._copyFrom(this._detailsEntity, sources.get(value));
+          }
+        },
+      });
+    }
 
     d.querySelector(".dmeasure").hidden = !calibrated;
     d.querySelector(".dclear").hidden = !calibrated;
-    d.querySelector(".dcal").textContent = calibrated ? "Fine-tune" : "Calibrate";
+    d.querySelector(".dcal").textContent = calibrated ? "Re-Calibrate" : "Calibrate";
   }
 
   _updateItem(item) {

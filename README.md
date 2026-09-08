@@ -119,8 +119,8 @@ how to calibrate it: measure it now, or copy another light's calibration. Copy,
 and it asks which — and the new light is set up already matching, with no pass
 through the sliders at all.
 
-An existing light can take another's calibration from **Calibration details**.
-It replaces rather than merges, and asks first: only worth doing between
+An existing light can take another's calibration from **Details**. It replaces
+rather than merges, and asks first: only worth doing between
 fixtures of the same model, since a profile describes one particular fixture's
 errors.
 
@@ -140,7 +140,8 @@ anything irreversible to a profile.
 
 ## Re-running
 
-Running calibration again **fine-tunes rather than resets**. Each step is seeded
+Running calibration again — **Re-Calibrate** in Details — **fine-tunes rather
+than resets**. Each step is seeded
 with the stored value, so you are adjusting from where you left off. "Finish
 now" saves what you have measured this pass and merges it into the stored
 profile — anything you did not revisit is kept. So a Quick pass can touch up
@@ -167,8 +168,9 @@ Each light gets a card shaped like the ones on Home Assistant's integrations
 page: the icon carries the light's current colour and state, and the row opens
 that light's ordinary more-info dialog.
 
-Under the divider, a calibrated light offers **Details** — the reference light, the measurements, fine-tuning and clearing the profile — next
-to a switch for the correction itself, so you can flip between corrected and raw
+Under the divider, a calibrated light offers **Details** — what it was matched
+against, the measurements, re-calibrating and clearing the profile — next to a
+switch for the correction itself, so you can flip between corrected and raw
 output without opening anything. Calibrated cards carry a tinted border, so the
 lights this integration is actually correcting stand out in the grid. A light
 with nothing measured shows **Calibrate**.
