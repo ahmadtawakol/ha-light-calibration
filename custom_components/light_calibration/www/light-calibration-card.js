@@ -583,10 +583,16 @@ const PANEL_STYLE = `
     overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.35);
   }
   .scrim h2 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 400; }
-  .scrim .sub { color: var(--secondary-text-color); font-size: 0.9rem; margin-bottom: 20px; }
-  .scrim .field { margin: 16px 0; }
-  .scrim .field label { display: block; font-size: 0.85rem; margin-bottom: 4px;
-                        color: var(--secondary-text-color); }
+  .scrim h2.ask { margin: 0 0 20px; }
+  .scrim .field { margin: 16px 0 4px; }
+  /* Wordless progress: the question is the only text on the step, and a
+     "1 of 2" would be more prose to read past. */
+  .scrim .dots { display: flex; gap: 6px; margin-bottom: 16px; }
+  .scrim .dots span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--divider-color, #ddd);
+  }
+  .scrim .dots span.on { background: var(--primary-color); }
   .scrim .err {
     color: var(--error-color, #db4437); font-size: 0.88rem; margin-top: 12px;
     border-left: 3px solid currentColor; padding-left: 12px;
@@ -674,20 +680,14 @@ class LightCalibrationPanel extends HTMLElement {
     adder.className = "scrim add-scrim";
     adder.innerHTML = `
       <div class="dialog" role="dialog" aria-modal="true">
-        <h2>Calibrate a light</h2>
-        <div class="sub">Pick the light that looks wrong and one you trust to
-          match it against. Calibration starts as soon as this is created.</div>
-        <div class="field">
-          <label>Light to calibrate</label><div class="pick target"></div>
-        </div>
-        <div class="field">
-          <label>Reference light (the one that looks right)</label>
-          <div class="pick reference"></div>
-        </div>
+        <div class="dots"><span></span><span></span></div>
+        <h2 class="ask"></h2>
+        <div class="field"><div class="pick"></div></div>
         <div class="err" hidden></div>
         <div class="actions">
           <button class="flat quiet left" data-act="cancel">Cancel</button>
-          <button class="primary" data-act="go">Start calibrating</button>
+          <button class="flat" data-act="back">Back</button>
+          <button class="primary" data-act="go"></button>
         </div>
       </div>`;
     this._adder = adder;
@@ -698,8 +698,10 @@ class LightCalibrationPanel extends HTMLElement {
     });
     adder.querySelector('[data-act="cancel"]').addEventListener(
       "click", () => this._closeAdd());
+    adder.querySelector('[data-act="back"]').addEventListener(
+      "click", () => this._addBack());
     adder.querySelector('[data-act="go"]').addEventListener(
-      "click", () => this._submitAdd());
+      "click", () => this._addNext());
     this._body = wrap.querySelector("#body");
     wrap.querySelector(".back").addEventListener("click", () => this._goBack());
     this._pickerReady = loadEntityPicker();
@@ -792,48 +794,98 @@ class LightCalibrationPanel extends HTMLElement {
      So the panel asks for them here and submits, instead of sending people out
      to Settings, through a flow dialog, and back again to start calibrating. */
   async _openAdd() {
+    this._addPicked = ["", ""];
+    this._addStep = 0;
     this._setAddError("");
-    // Everything that makes the dialog stateful is reset here, in one place:
-    // the submit button is disabled while a flow is in flight and the success
-    // path leaves through an early return, so it has to be revived somewhere.
-    this._adder.querySelector('[data-act="go"]').disabled = false;
     this._adder.classList.add("open");
-    const native = await this._pickerReady;
-    const skip = new Set();
+    await this._renderAddStep();
+  }
+
+  /* One question per step. The heading is the whole prompt -- a light that
+     looks wrong, then a light to match it against -- so there is nothing else
+     on the step to read. */
+  async _renderAddStep() {
+    const step = this._addStep;
+    const dialog = this._adder;
+    dialog.querySelector(".ask").textContent = step === 0
+      ? "Which light looks wrong?"
+      : "Which light should it match?";
+    dialog.querySelectorAll(".dots span").forEach(
+      (dot, i) => dot.classList.toggle("on", i <= step));
+    dialog.querySelector('[data-act="back"]').style.display =
+      step === 0 ? "none" : "";
+    const go = dialog.querySelector('[data-act="go"]');
+    go.textContent = step === 0 ? "Next" : "Start calibrating";
+    go.disabled = false;
+    this._setAddError("");
+
+    // The displaced fixtures are never an answer to either question: they are
+    // the uncorrected output of a light already calibrated, so matching against
+    // one throws away the correction, and calibrating one again is nonsense.
+    const raw = new Set();
+    const calibrated = new Set();
     for (const e of calibrationSensors(this._hass)) {
-      const raw = this._hass.states[e].attributes.calibrating || "";
-      skip.add(raw).add(raw.replace(/_raw$/, ""));
+      const behind = this._hass.states[e].attributes.calibrating || "";
+      raw.add(behind);
+      calibrated.add(behind.replace(/_raw$/, ""));
     }
-    for (const slot of ["target", "reference"]) {
-      const holder = this._adder.querySelector(`.pick.${slot}`);
-      // Built fresh every time the dialog opens. A picker kept around still
-      // holds the previous answer -- so calibrating one light and reaching for
-      // the next offered that same light back, already filled in -- and its
-      // exclusions go stale the moment anything is calibrated.
-      holder.replaceChildren();
-      if (native) {
-        const picker = document.createElement("ha-entity-picker");
-        picker.hass = this._hass;
-        picker.includeDomains = ["light"];
-        picker.allowCustomEntity = false;
-        // Nothing this integration already stands in front of: the flow would
-        // reject it anyway, and a picker that cannot offer a mistake is kinder
-        // than an error afterwards.
-        if (slot === "target") picker.excludeEntities = [...skip];
-        holder.appendChild(picker);
-      } else {
-        const select = document.createElement("select");
-        select.innerHTML =
-          `<option value="">Choose a light...</option>` +
-          Object.keys(this._hass.states)
-            .filter((e) => e.startsWith("light.") &&
-                           !(slot === "target" && skip.has(e)))
-            .sort()
-            .map((e) => `<option value="${e}">${this._name(e)}</option>`)
-            .join("");
-        holder.appendChild(select);
-      }
+    // Step one also hides lights this integration already stands in front of;
+    // step two hides the light being calibrated, so the two can never be the
+    // same and that rejection can never come up. A calibrated light is a fine
+    // reference, though -- often the best one.
+    const skip = step === 0
+      ? new Set([...raw, ...calibrated])
+      : new Set([...raw, this._addPicked[0]]);
+    await this._mountAddPicker(skip, this._addPicked[step]);
+  }
+
+  async _mountAddPicker(skip, value) {
+    const native = await this._pickerReady;
+    const holder = this._adder.querySelector(".pick");
+    // Rebuilt each step, so it never hands back an answer to a different
+    // question and its exclusions are never stale.
+    holder.replaceChildren();
+    if (native) {
+      const picker = document.createElement("ha-entity-picker");
+      picker.hass = this._hass;
+      picker.includeDomains = ["light"];
+      picker.allowCustomEntity = false;
+      picker.excludeEntities = [...skip].filter(Boolean);
+      picker.value = value || "";
+      holder.appendChild(picker);
+      return;
     }
+    const select = document.createElement("select");
+    select.innerHTML =
+      `<option value="">Choose a light...</option>` +
+      Object.keys(this._hass.states)
+        .filter((e) => e.startsWith("light.") && !skip.has(e))
+        .sort()
+        .map((e) => `<option value="${e}"${e === value ? " selected" : ""}>` +
+                    `${this._name(e)}</option>`)
+        .join("");
+    holder.appendChild(select);
+  }
+
+  async _addBack() {
+    this._addStep = 0;
+    await this._renderAddStep();
+  }
+
+  async _addNext() {
+    const holder = this._adder.querySelector(".pick").firstChild;
+    const value = (holder && holder.value) || "";
+    if (!value) {
+      this._setAddError("Pick a light.");
+      return;
+    }
+    this._addPicked[this._addStep] = value;
+    if (this._addStep === 0) {
+      this._addStep = 1;
+      await this._renderAddStep();
+      return;
+    }
+    await this._submitAdd();
   }
 
   _closeAdd() {
@@ -846,11 +898,6 @@ class LightCalibrationPanel extends HTMLElement {
     box.hidden = !text;
   }
 
-  _addValue(slot) {
-    const el = this._adder.querySelector(`.pick.${slot}`).firstChild;
-    return (el && el.value) || "";
-  }
-
   /* The flow answers with error keys, which are the same ones the translations
      already carry -- so the message is whatever the setup form would have said. */
   _addErrorText(code) {
@@ -861,12 +908,7 @@ class LightCalibrationPanel extends HTMLElement {
   }
 
   async _submitAdd() {
-    const target = this._addValue("target");
-    const reference = this._addValue("reference");
-    if (!target || !reference) {
-      this._setAddError("Pick both lights.");
-      return;
-    }
+    const [target, reference] = this._addPicked;
     const go = this._adder.querySelector('[data-act="go"]');
     go.disabled = true;
     this._setAddError("");
