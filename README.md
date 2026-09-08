@@ -114,14 +114,24 @@ Two units of the same model are usually wrong in the same way, so there is no
 need to measure both. Calibrate one, then copy its profile to the other — the
 difference between eight minutes and none.
 
-Either card will do it. A calibrated light offers **Copy this calibration to**;
-one with no profile offers **Copy calibration from**. Same operation, named for
-whichever light you happen to be looking at.
+Open the light you want to change and pick the source from **Copy calibration
+from**. It replaces rather than merges, and asks first — only worth doing
+between fixtures of the same model, since a profile describes one particular
+fixture's errors.
 
-It replaces rather than merges: copying X onto Y leaves Y matching X, not some
-blend of the two. Only worth doing between fixtures of the same model, since a
-profile describes one particular fixture's errors. There is a `copy_profile`
-service for doing it from a script.
+There is a `copy_profile` service for doing it from a script.
+
+## Seeing what was measured
+
+**Show measurements** on a light's card lists every point in the profile: what
+was asked for, and what the fixture had to be sent to produce it. That is the
+only view of a calibration as a whole — the numbers live in the config entry,
+not in any entity.
+
+For the raw data, the entry's ⋮ → **Download diagnostics** gives the stored
+points as JSON, along with the corrections the profile produces at a spread of
+colour temperatures and brightnesses. Worth keeping a copy before doing
+anything irreversible to a profile.
 
 ## Re-running
 

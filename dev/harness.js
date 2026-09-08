@@ -76,6 +76,20 @@ const STATES = {
     a: { stored_points: 15, stored_colors: 6 } },
 };
 
+/* A realistic Standard + colours profile, for the measurements table. */
+const SAMPLE_POINTS = [
+  ...[10, 40, 80].flatMap((b, i) => [2000, 2700, 4000].map((k, j) => ({
+    type: "white", kelvin: k, brightness: b,
+    kelvin_offset: -320 + j * 70 + i * 15, tint: 14 - j * 4,
+    brightness_actual: b + 5 - i * 2,
+  }))),
+  ...[0, 60, 120, 180, 240, 300].map((h) => ({
+    type: "color", hue: h, brightness: 60,
+    hue_shift: h === 0 ? 9 : h === 120 ? -6 : 3,
+    saturation: 88 - (h % 90) / 10, brightness_actual: 55,
+  })),
+];
+
 let current = "fresh (just added)";
 
 function log(line) {
@@ -132,6 +146,13 @@ function hass() {
     states,
     callService: (domain, service, data) =>
       log(`${domain}.${service} ${JSON.stringify(data)}`),
+    /* The panel fetches measured points over the websocket rather than reading
+       them off the sensor, so the mock has to answer that too. */
+    callWS: async (msg) => {
+      log(`WS ${msg.type} ${JSON.stringify({ entry_id: msg.entry_id })}`);
+      if (msg.type !== "light_calibration/profile") throw new Error("unknown");
+      return { points: SAMPLE_POINTS };
+    },
   };
 }
 

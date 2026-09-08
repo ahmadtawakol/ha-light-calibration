@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from typing import Any
 from pathlib import Path
 
 import voluptuous as vol
 
-from homeassistant.components import frontend, panel_custom
+from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -85,7 +86,35 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the dialog card and the calibration services."""
     await _async_register_card(hass)
     _async_register_services(hass)
+    websocket_api.async_register_command(hass, _ws_profile)
     return True
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/profile",
+        vol.Required("entry_id"): cv.string,
+    }
+)
+@callback
+def _ws_profile(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """The measured points for one light.
+
+    The panel needs these to show what a calibration actually did. They are not
+    on the sensor's attributes deliberately: a profile is a couple of kilobytes
+    and the sensor changes state on every step of a run, so putting them there
+    would write the whole thing to the recorder over and over for no reason.
+    """
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None or entry.domain != DOMAIN:
+        connection.send_error(msg["id"], "not_found", "No such calibrated light")
+        return
+    connection.send_result(msg["id"], {"points": entry.data.get(CONF_POINTS) or []})
 
 
 async def _async_register_card(hass: HomeAssistant) -> str:
@@ -409,10 +438,13 @@ def _async_adopt_area(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if not area_id:
         return
     devices = dr.async_get(hass)
-    device = devices.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
-    if device is None or device.area_id is not None:
+    # Asked for by config entry rather than by identifier: identifiers are no
+    # longer unique across entries, so looking one up that way is deprecated.
+    # This integration creates exactly one device per entry, so the first is it.
+    owned = dr.async_entries_for_config_entry(devices, entry.entry_id)
+    if not owned or owned[0].area_id is not None:
         return
-    devices.async_update_device(device.id, area_id=area_id)
+    devices.async_update_device(owned[0].id, area_id=area_id)
     _LOGGER.info("Placed %s in area %s, following %s", entry.title, area_id, renamed)
 
 

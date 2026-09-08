@@ -484,6 +484,43 @@ function calibrationSensors(hass) {
    domain, so adding a second light is not a hunt through Settings. */
 const ADD_URL = "/config/integrations/dashboard/add?domain=light_calibration";
 
+const HUE_NAMES = { 0: "red", 60: "yellow", 120: "green",
+                    180: "cyan", 240: "blue", 300: "magenta" };
+
+const signed = (n) => (n > 0 ? "+" : n < 0 ? "\u2212" : "") + Math.abs(Math.round(n));
+
+/* What a profile actually measured. The stored numbers are corrections, not
+   settings -- "asked for 2700K, this fixture needed -250K and a push towards
+   green" -- so the table says which is which rather than listing raw fields. */
+function renderPoints(points) {
+  const whites = points.filter((p) => (p.type || "white") === "white")
+    .sort((a, b) => a.brightness - b.brightness || a.kelvin - b.kelvin);
+  const colours = points.filter((p) => p.type === "color")
+    .sort((a, b) => a.brightness - b.brightness || a.hue - b.hue);
+  let html = "";
+  if (whites.length) {
+    html += `<table><thead><tr><th>Asked for</th><th>Colour</th><th>Tint</th>
+      <th>Brightness</th></tr></thead><tbody>` +
+      whites.map((p) => `<tr>
+        <td>${p.kelvin}K at ${p.brightness}%</td>
+        <td>${signed(p.kelvin_offset || 0)}K</td>
+        <td>${signed(p.tint || 0)}%</td>
+        <td>${Math.round(p.brightness_actual ?? p.brightness)}%</td></tr>`).join("") +
+      `</tbody></table>`;
+  }
+  if (colours.length) {
+    html += `<table><thead><tr><th>Asked for</th><th>Hue</th><th>Saturation</th>
+      <th>Brightness</th></tr></thead><tbody>` +
+      colours.map((p) => `<tr>
+        <td>${HUE_NAMES[p.hue] || p.hue + "\u00b0"} at ${p.brightness}%</td>
+        <td>${signed(p.hue_shift || 0)}\u00b0</td>
+        <td>${Math.round(p.saturation ?? 100)}%</td>
+        <td>${Math.round(p.brightness_actual ?? p.brightness)}%</td></tr>`).join("") +
+      `</tbody></table>`;
+  }
+  return html || "<p>Nothing measured yet.</p>";
+}
+
 const PANEL_STYLE = `
   ${BUTTONS}
   :host { display: block; background: var(--primary-background-color); min-height: 100vh; }
@@ -529,6 +566,15 @@ const PANEL_STYLE = `
     background: var(--secondary-background-color, #f0f0f0);
     padding: 1px 5px; border-radius: 4px; font-size: 0.85em;
   }
+  .measurements { margin-top: 16px; font-size: 0.85rem; overflow-x: auto; }
+  .measurements[hidden] { display: none; }
+  .measurements table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
+  .measurements th, .measurements td {
+    text-align: left; padding: 5px 10px 5px 0; white-space: nowrap;
+    border-bottom: 1px solid var(--divider-color, #e0e0e0);
+  }
+  .measurements th { color: var(--secondary-text-color); font-weight: 500; }
+  .measurements td { font-variant-numeric: tabular-nums; }
   .add { display: flex; justify-content: center; margin: 4px 0 24px; }
   .add a {
     color: var(--primary-color); text-decoration: none; font-size: 0.95rem;
@@ -707,15 +753,17 @@ class LightCalibrationPanel extends HTMLElement {
       <div class="meta"></div>
       <div class="ref"><div class="picker"></div></div>
       <div class="copy" hidden>
-        <label class="copylabel"></label>
+        <label>Copy calibration from</label>
         <select class="copyfrom"></select>
       </div>
       <div class="row">
         <button class="primary calibrate">Calibrate</button>
         <button class="flat toggle" hidden></button>
         <div class="spacer"></div>
+        <button class="flat show" hidden>Show measurements</button>
         <button class="flat clear">Clear profile</button>
-      </div>`;
+      </div>
+      <div class="measurements" hidden></div>`;
 
     const calibrate = el.querySelector(".calibrate");
     calibrate.addEventListener("click", () => {
@@ -749,13 +797,8 @@ class LightCalibrationPanel extends HTMLElement {
       const other = copy.value;
       copy.value = "";
       if (!other) return;
-      const here = this._hass.states[entity].attributes;
-      const there = this._hass.states[other].attributes;
-      // A card with a profile is offering to hand it out; one without is asking
-      // for one. Same operation either way -- see _copyDirection.
-      const giving = here.stored_points > 0;
-      const from = giving ? here : there;
-      const to = giving ? there : here;
+      const to = this._hass.states[entity].attributes;
+      const from = this._hass.states[other].attributes;
       const losing = to.stored_points > 0
         ? `\n\n${this._name(to.calibrating)}'s own measurements ` +
           `(${to.profile_summary}) are discarded.`
@@ -771,14 +814,40 @@ class LightCalibrationPanel extends HTMLElement {
       });
     });
 
+    // Fetched on demand rather than carried on the sensor: a profile is a
+    // couple of kilobytes and the sensor changes on every step of a run.
+    const measurements = el.querySelector(".measurements");
+    const show = el.querySelector(".show");
+    show.addEventListener("click", async () => {
+      if (!measurements.hidden) {
+        measurements.hidden = true;
+        show.textContent = "Show measurements";
+        return;
+      }
+      show.disabled = true;
+      try {
+        const result = await this._hass.callWS({
+          type: "light_calibration/profile", entry_id,
+        });
+        measurements.innerHTML = renderPoints(result.points || []);
+        show.textContent = "Hide measurements";
+      } catch (err) {
+        measurements.textContent =
+          `Could not read the profile: ${(err && err.message) || err}`;
+      }
+      measurements.hidden = false;
+      show.disabled = false;
+    });
+
     const item = {
       el,
       title: el.querySelector("h3"),
       meta: el.querySelector(".meta"),
       clear: el.querySelector(".clear"),
       copyRow: el.querySelector(".copy"),
-      copyLabel: el.querySelector(".copylabel"),
       copy,
+      show,
+      measurements,
       pickerSlot: el.querySelector(".picker"),
       picker: null,
       toggle,
@@ -837,33 +906,31 @@ class LightCalibrationPanel extends HTMLElement {
     // Nothing to discard before there is a profile, and offering it next to
     // Calibrate just invites a mis-click.
     item.clear.hidden = !(a.stored_points > 0);
+    item.show.hidden = !(a.stored_points > 0);
+    if (item.show.hidden) {
+      item.measurements.hidden = true;
+      item.show.textContent = "Show measurements";
+    }
 
-    // Reachable from whichever light you happen to be looking at. A calibrated
-    // one offers to hand its profile out; one with nothing offers to take a
-    // profile in. Building only the second half left a calibrated light with no
-    // affordance at all, which is exactly where people go looking.
-    const giving = a.stored_points > 0;
-    const others = calibrationSensors(this._hass).filter(
-      (e) => e !== entity &&
-             (giving || this._hass.states[e].attributes.stored_points > 0)
+    // One direction: into the light whose card you are on. The sidebar lists
+    // every calibrated light, so getting to the one you want to change is the
+    // easy part -- a second control for the other direction was just two ways
+    // to say the same thing.
+    const sources = calibrationSensors(this._hass).filter(
+      (e) => e !== entity && this._hass.states[e].attributes.stored_points > 0
     );
-    item.copyRow.hidden = others.length === 0;
-    item.copyLabel.textContent = giving
-      ? "Copy this calibration to" : "Copy calibration from";
+    item.copyRow.hidden = sources.length === 0;
 
-    const key = giving + "|" + others.map(
+    const key = sources.map(
       (e) => e + ":" + this._hass.states[e].attributes.stored_points).join(",");
-    if (others.length && item.copyKey !== key) {
+    if (sources.length && item.copyKey !== key) {
       item.copyKey = key;
       item.copy.innerHTML =
         `<option value="">Choose a light...</option>` +
-        others.map((e) => {
-          const oa = this._hass.states[e].attributes;
-          const summary = oa.profile_summary || `${oa.stored_points} points`;
-          const note = giving
-            ? (oa.stored_points > 0 ? ` - replaces ${summary}` : "")
-            : ` - ${summary}`;
-          return `<option value="${e}">${this._name(oa.calibrating)}${note}</option>`;
+        sources.map((e) => {
+          const sa = this._hass.states[e].attributes;
+          return `<option value="${e}">${this._name(sa.calibrating)} - ` +
+                 `${sa.profile_summary || sa.stored_points + " points"}</option>`;
         }).join("");
     }
 
