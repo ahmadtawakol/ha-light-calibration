@@ -1326,12 +1326,8 @@ class LightCalibrationPanel extends HTMLElement {
     if (choosing) return;
 
     if (step === 3) {
-      const holder = d.querySelector(".pick");
-      holder.replaceChildren();
-      const select = document.createElement("select");
-      this._fillCopyOptions(select, sources);
-      select.value = this._addSource;
-      holder.appendChild(select);
+      await this._mountAddPicker(
+        new Set(), this._addSource, [...this._calibratedLights().keys()]);
       return;
     }
 
@@ -1354,7 +1350,9 @@ class LightCalibrationPanel extends HTMLElement {
     await this._mountAddPicker(skip, this._addPicked[step]);
   }
 
-  async _mountAddPicker(skip, value) {
+  /* ``only`` narrows the picker to an explicit list instead of hiding a few --
+     every step asks for a light, so every step gets the same control. */
+  async _mountAddPicker(skip, value, only) {
     const native = await this._pickerReady;
     const holder = this._adder.querySelector(".pick");
     // Rebuilt each step, so it never hands back an answer to a different
@@ -1365,21 +1363,35 @@ class LightCalibrationPanel extends HTMLElement {
       picker.hass = this._hass;
       picker.includeDomains = ["light"];
       picker.allowCustomEntity = false;
-      picker.excludeEntities = [...skip].filter(Boolean);
+      if (only) picker.includeEntities = only;
+      else picker.excludeEntities = [...skip].filter(Boolean);
       picker.value = value || "";
       holder.appendChild(picker);
       return;
     }
+    const ids = only
+      ? only.slice()
+      : Object.keys(this._hass.states)
+          .filter((e) => e.startsWith("light.") && !skip.has(e));
     const select = document.createElement("select");
     select.innerHTML =
       `<option value="">Choose a light...</option>` +
-      Object.keys(this._hass.states)
-        .filter((e) => e.startsWith("light.") && !skip.has(e))
-        .sort()
+      ids.sort()
         .map((e) => `<option value="${e}"${e === value ? " selected" : ""}>` +
                     `${this._name(e)}</option>`)
         .join("");
     holder.appendChild(select);
+  }
+
+  /* The calibrated lights, keyed by the light itself rather than by the sensor
+     that describes it -- the picker deals in lights. */
+  _calibratedLights() {
+    const map = new Map();
+    for (const sensor of this._addSources()) {
+      const behind = this._hass.states[sensor].attributes.calibrating || "";
+      map.set(behind.replace(/_raw$/, ""), sensor);
+    }
+    return map;
   }
 
   async _addBack() {
@@ -1479,14 +1491,14 @@ class LightCalibrationPanel extends HTMLElement {
   /* Chose to copy rather than measure: hand the profile over as soon as the
      new entry has entities, and do not drop into calibration -- the whole point
      of copying is not having to. */
-  async _copyWhenReady(entryId, source) {
+  async _copyWhenReady(entryId, sourceLight) {
     this._autoOpened = true;   // suppress the open-on-empty-profile behaviour
+    const sourceSensor = this._calibratedLights().get(sourceLight);
     const sensor = await this._sensorFor(entryId);
-    if (!sensor) return;
-    const from = this._hass.states[source].attributes;
+    if (!sensor || !sourceSensor) return;
     this._hass.callService("light_calibration", "copy_profile", {
       entry_id: this._hass.states[sensor].attributes.entry_id,
-      source_entry_id: from.entry_id,
+      source_entry_id: this._hass.states[sourceSensor].attributes.entry_id,
     });
   }
 
