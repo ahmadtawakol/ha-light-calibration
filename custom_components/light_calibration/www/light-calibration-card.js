@@ -538,15 +538,22 @@ function lightColor(light) {
 /* One colour at two alphas -- the badge tint is the icon colour at 0.2, the way
    ha-tile-icon does it, rather than a separately chosen pale shade. */
 function lightTint(light) {
+  // The struck-through bulb belongs to "off" alone. Home Assistant's own
+  // icons.json overrides light's icon for exactly one state -- off -- so an
+  // unavailable or unknown light keeps the plain bulb and says so by being
+  // greyed, not by looking switched off.
   if (!light || light.state === "unavailable") {
-    return { color: "var(--state-unavailable-color, #bdbdbd)", lit: false };
+    return { color: "var(--state-unavailable-color, #bdbdbd)", icon: ICONS.bulb };
+  }
+  if (light.state === "off") {
+    return { color: "var(--state-inactive-color, #9e9e9e)", icon: ICONS.bulbOff };
   }
   if (light.state !== "on") {
-    return { color: "var(--state-inactive-color, #9e9e9e)", lit: false };
+    return { color: "var(--state-inactive-color, #9e9e9e)", icon: ICONS.bulb };
   }
   return {
     color: lightColor(light) || "var(--state-light-active-color, #ffc107)",
-    lit: true,
+    icon: ICONS.bulb,
   };
 }
 
@@ -1461,7 +1468,7 @@ class LightCalibrationPanel extends HTMLElement {
 
     const tint = lightTint(light);
     item.badge.style.color = tint.color;
-    item.icon.setAttribute("d", tint.lit ? ICONS.bulb : ICONS.bulbOff);
+    item.icon.setAttribute("d", tint.icon);
     item.swIcon.setAttribute("d", ICONS.eyedropper);
 
     // A tile card's second line is the light's state, and that is what this
