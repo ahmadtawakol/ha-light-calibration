@@ -592,6 +592,8 @@ function describeLight(light) {
   return ["On", pct].filter(Boolean).join(" \u00b7 ");
 }
 
+const SCOPE_KEY = "light_calibration.scope";
+
 const HUE_NAMES = { 0: "red", 60: "yellow", 120: "green",
                     180: "cyan", 240: "blue", 300: "magenta" };
 
@@ -805,10 +807,6 @@ const PANEL_STYLE = `
     border-top: 1px solid var(--divider-color, rgba(127,127,127,0.2));
   }
   .foot .grow { flex: 1; }
-  /* Nothing measured yet: the one action sits where the switch would, so the
-     footer reads the same way down the grid whichever state a card is in. */
-  .foot.pending .grow { order: 1; }
-  .foot.pending .act { order: 2; }
   .link {
     background: none; border: none; padding: 0; cursor: pointer; font: inherit;
     font-size: 0.9rem; color: var(--primary-color); text-align: left;
@@ -996,7 +994,7 @@ class LightCalibrationPanel extends HTMLElement {
           </button>
         </div>
         <div class="chips">
-          <button class="chip on" data-scope="calibrated">
+          <button class="chip" data-scope="calibrated">
             <svg class="tick" viewBox="0 0 18 18"><path d="${ICONS.tick}"/></svg>
             <span>Calibrated</span>
           </button>
@@ -1112,7 +1110,10 @@ class LightCalibrationPanel extends HTMLElement {
       });
     }
     this._body = wrap.querySelector("#body");
-    this._scope = "calibrated";
+    // Remembered per browser: which scope you left it on is a preference, not
+    // something to rediscover on every visit. Every read and write is guarded
+    // -- localStorage throws outright in some privacy settings.
+    this._scope = this._storedScope() || "all";
     this._query = "";
     const q = wrap.querySelector("#q");
     this._search = q;
@@ -1126,8 +1127,11 @@ class LightCalibrationPanel extends HTMLElement {
       q.value = ""; this._query = ""; clearq.hidden = true; q.focus(); this._render();
     });
     for (const chip of wrap.querySelectorAll(".chip")) {
+      // Whichever scope was remembered starts selected.
+      chip.classList.toggle("on", chip.dataset.scope === this._scope);
       chip.addEventListener("click", () => {
         this._scope = chip.dataset.scope;
+        this._storeScope(this._scope);
         for (const other of wrap.querySelectorAll(".chip")) {
           other.classList.toggle("on", other === chip);
         }
@@ -1426,6 +1430,21 @@ class LightCalibrationPanel extends HTMLElement {
       return;
     }
     await this._submitAdd();
+  }
+
+  _storedScope() {
+    try {
+      const stored = window.localStorage.getItem(SCOPE_KEY);
+      return stored === "calibrated" || stored === "all" ? stored : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  _storeScope(scope) {
+    try {
+      window.localStorage.setItem(SCOPE_KEY, scope);
+    } catch (err) { /* nothing worth doing about it */ }
   }
 
   _closeAdd() {
@@ -1802,8 +1821,7 @@ class LightCalibrationPanel extends HTMLElement {
     item.state.classList.toggle("warn", calibrated && !on && !(a && a.active));
 
     item.el.classList.toggle("calibrated", calibrated);
-    item.foot.classList.toggle("pending", !calibrated);
-    item.act.textContent = calibrated ? "Calibration details" : "Calibrate";
+    item.act.textContent = calibrated ? "Details" : "Calibrate";
     item.sw.hidden = !calibrated;
     item.sw.setAttribute("aria-checked", on ? "true" : "false");
     item.sw.title = on ? "Correction on" : "Correction off";

@@ -155,8 +155,9 @@ Download and restart Home Assistant.
 **Calibrated / All lights** switch across the top and **Calibrate a light** in
 the bottom corner.
 
-It opens on the lights it has already calibrated. Switch to **All lights** and
-every light that *could* be calibrated appears — anything with colour or a
+It opens on every light that *could* be calibrated — anything with colour or a
+tunable white — or on just the calibrated ones, whichever you last had it set
+to. Switch to **All lights** and every candidate appears — anything with colour or a
 tunable white; a plain on/off or brightness-only fixture has no colour
 behaviour to correct and is left out. Press **Calibrate** on any of them and it
 goes straight to asking what it should match, since you have already said which
@@ -166,8 +167,7 @@ Each light gets a card shaped like the ones on Home Assistant's integrations
 page: the icon carries the light's current colour and state, and the row opens
 that light's ordinary more-info dialog.
 
-Under the divider, a calibrated light offers **Calibration details** — the
-reference light, the measurements, fine-tuning and clearing the profile — next
+Under the divider, a calibrated light offers **Details** — the reference light, the measurements, fine-tuning and clearing the profile — next
 to a switch for the correction itself, so you can flip between corrected and raw
 output without opening anything. Calibrated cards carry a tinted border, so the
 lights this integration is actually correcting stand out in the grid. A light
