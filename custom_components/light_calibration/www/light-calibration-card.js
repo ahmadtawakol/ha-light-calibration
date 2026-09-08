@@ -501,6 +501,7 @@ const ICONS = {
          "13.41L17.59,19L19,17.59L13.41,12L19,6.41Z",
   // Material's own filter-chip checkmark, on an 18x18 viewBox rather than 24.
   plus: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
+  chevron: "M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z",
   tick: "M6.75012 12.1274L3.62262 8.99988L2.55762 10.0574L6.75012 14.2499L15" +
         ".7501 5.24988L14.6926 4.19238L6.75012 12.1274Z",
   eyedropper: "M6.92,19L5,17.08L13.06,9L15,10.94M20.71,5.63L18.37,3.29C18,2.9 " +
@@ -729,19 +730,15 @@ const PANEL_STYLE = `
                 0 3px 14px 2px rgba(0,0,0,0.12);
   }
   .fab svg { width: 24px; height: 24px; fill: currentColor; }
-  /* The grid has to end above the FAB or the last row hides behind it. */
-  .body { padding-bottom: 88px; }
   @media (max-width: 700px) {
     .search { flex-basis: 100%; }
     /* Collapses to a circle, as HA's does on narrow screens. */
     .fab span { display: none; }
     .fab { padding: 0; width: 56px; justify-content: center; }
   }
-  .body { padding: 0 16px 24px; }
-  .grid {
-    display: grid; gap: 14px;
-    grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
-  }
+  /* The bottom padding clears the FAB, or the last row hides behind it. */
+  .body { padding: 0 16px 88px; }
+
   .item {
     background: var(--card-background-color, #fff);
     border-radius: var(--ha-card-border-radius, 12px);
@@ -752,26 +749,24 @@ const PANEL_STYLE = `
   /* Measured against home-assistant/frontend: ha-tile-icon, ha-tile-info and
      ha-control-switch. Laid out square rather than in a row, because these sit
      in a grid of their own rather than in a dashboard column. */
-  .grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-  .item { padding: 12px; gap: 10px; aspect-ratio: 1; }
-  /* A card offering a profile to copy carries one control more than a square
-     has room for. Only that card grows; the grid row keeps them level. */
-  .item:has(.copy:not([hidden])) { aspect-ratio: auto; }
-  .copy[hidden] { display: none; }
-  .copy select { font-size: 0.82rem; padding: 7px; }
-  /* The whole upper area behaves the way a tile does: it opens the light's own
-     more-info dialog. Anything about the calibration has its own button. */
+  /* Shaped like Home Assistant's integrations cards: a header row with the
+     icon and name on one line, a divider, then a footer whose only colour is a
+     text link -- their "21 services", here what this light has measured. */
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+  .item { padding: 0; gap: 0; }
   .tile {
-    flex: 1; min-height: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 6px; text-align: center;
-    background: none; border: none; padding: 0; cursor: pointer;
-    font: inherit; color: inherit; width: 100%;
+    display: flex; align-items: center; gap: 16px; width: 100%;
+    padding: 14px 16px; background: none; border: none; cursor: pointer;
+    font: inherit; color: inherit; text-align: left;
   }
   .badge {
-    flex: 0 0 auto; position: relative; width: 48px; height: 48px;
+    flex: 0 0 auto; position: relative; width: 40px; height: 40px;
     border-radius: var(--ha-border-radius-pill, 9999px);
     display: grid; place-items: center; overflow: hidden;
-    transition: transform 180ms ease-in-out, color 180ms ease-in-out;
+    transition: color 180ms ease-in-out;
   }
   /* The tint is the icon's own colour at 0.2, not a separately picked shade. */
   .badge::before {
@@ -779,92 +774,60 @@ const PANEL_STYLE = `
     background-color: currentColor; opacity: 0.2; transition: opacity 180ms;
   }
   .tile:hover .badge::before { opacity: 0.35; }
-  .tile:active .badge { transform: scale(1.2); }
-  .badge svg { width: 28px; height: 28px; fill: currentColor; position: relative; }
-  .text {
-    display: flex; flex-direction: column; align-items: center;
-    width: 100%; min-width: 0;
-  }
+  .badge svg { width: 24px; height: 24px; fill: currentColor; position: relative; }
+  .text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .name {
-    font-size: 14px; font-weight: 500; line-height: 1.3; letter-spacing: 0.1px;
-    color: var(--primary-text-color); width: 100%;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-    overflow: hidden;
+    font-size: 14px; font-weight: 500; line-height: 1.4; letter-spacing: 0.1px;
+    color: var(--primary-text-color);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .state {
-    font-size: 12px; font-weight: 400; line-height: 1.2; letter-spacing: 0.4px;
-    color: var(--primary-text-color); opacity: 0.75; width: 100%;
+    font-size: 12px; font-weight: 400; line-height: 1.3; letter-spacing: 0.4px;
+    color: var(--primary-text-color); opacity: 0.75;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .state.warn { color: var(--warning-color, #ffa726); opacity: 1; }
-  .feature { display: flex; gap: 8px; flex: 0 0 auto; }
-  .feature > * {
-    height: 42px; border-radius: var(--ha-border-radius-lg, 12px);
+  .chev {
+    flex: 0 0 auto; width: 20px; height: 20px;
+    fill: var(--secondary-text-color); opacity: 0.7;
   }
-  .feature .act, .feature .switch { flex: 1; min-width: 0; }
-  /* Tonal, not solid. A screenful of cards each carrying a filled accent button
-     is a wall of blue; the one solid button on the page belongs in the toolbar,
-     where it is the single call to action. */
-  .feature .act.primary {
-    background: var(--ha-color-fill-primary-normal-hover,
-                    color-mix(in srgb, var(--primary-color) 16%, transparent));
-    color: var(--primary-color);
+  .foot {
+    display: flex; align-items: center; gap: 12px; min-height: 48px;
+    padding: 6px 16px; box-sizing: border-box;
+    border-top: 1px solid var(--divider-color, rgba(127,127,127,0.2));
   }
-  .feature .act.primary:hover {
-    background: color-mix(in srgb, var(--primary-color) 26%, transparent);
+  .foot .grow { flex: 1; }
+  .link {
+    background: none; border: none; padding: 0; cursor: pointer; font: inherit;
+    font-size: 0.9rem; color: var(--primary-color); text-align: left;
   }
-  /* Out-specifies .feature .details, which sets display:grid -- otherwise a
-     hidden button keeps its display and renders anyway. */
-  .item .feature > *[hidden] { display: none; }
-  .feature .details {
-    flex: 0 0 42px; width: 42px; padding: 0; border: none; cursor: pointer;
-    background: rgba(127,127,127,0.16); color: var(--primary-text-color);
-    display: grid; place-items: center; transition: background 180ms;
-  }
-  .feature .details:hover { background: rgba(127,127,127,0.28); }
-  .feature .details svg { width: 20px; height: 20px; fill: currentColor; }
-  /* ha-control-switch: a track with a half-width sliding thumb. Deliberately
-     NOT in the light's colour -- it switches the calibration, not the light,
-     and wearing the light's colour made it read as another light control. */
+  .link:hover { text-decoration: underline; }
+  /* A plain switch, small enough to sit in a footer row beside a link. */
   .switch {
-    position: relative; display: flex; padding: 0; border: none;
-    cursor: pointer; overflow: hidden; background: none;
-    /* --state-inactive-color, not --disabled-color: the latter is #464646 in
-       the dark theme and all but vanishes on a dark card. */
+    position: relative; flex: 0 0 auto; width: 36px; height: 20px;
+    border: none; background: none; padding: 0; cursor: pointer;
     color: var(--state-inactive-color, #9e9e9e);
     transition: color 180ms ease-in-out;
   }
   .switch.on { color: var(--primary-color); }
+  .switch[hidden] { display: none; }
   .switch .track {
-    position: absolute; inset: 0; border-radius: inherit;
-    background-color: currentColor; opacity: 0.2;
-    transition: opacity 180ms ease-in-out;
+    position: absolute; inset: 0; border-radius: 10px;
+    background: currentColor; opacity: 0.4; transition: opacity 180ms;
   }
-  .switch:hover .track { opacity: 0.4; }
-  .switch .thumb {
-    position: relative; width: 50%; height: 100%; border-radius: inherit;
-    background-color: currentColor;
-    display: grid; place-items: center;
-    transition: transform 180ms ease-in-out;
+  .switch:hover .track { opacity: 0.6; }
+  .switch .knob {
+    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--card-background-color, #fff);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    transition: transform 180ms ease-in-out, background 180ms ease-in-out;
   }
-  .switch.on .thumb { transform: translateX(100%); }
-  /* Fixed white rather than currentColor: currentColor here is the thumb's own
-     background, so inheriting it would paint the icon invisible. */
-  .switch .thumb svg { width: 20px; height: 20px; fill: #fff; }
-
-  /* One column wide, a square is 300-odd pixels tall with a hole in the middle.
-     Let the card be its own height once it stops sharing a row. */
-  @media (max-width: 480px) {
-    .grid { grid-template-columns: 1fr; }
-    .item { aspect-ratio: auto; }
-    .tile { flex-direction: row; text-align: left; gap: 12px; }
-    .badge { width: 40px; height: 40px; }
-    .badge svg { width: 24px; height: 24px; }
-    .text { align-items: flex-start; }
-    .name { -webkit-line-clamp: 1; }
-  }
-  .copy { margin-top: 12px; }
+  .switch.on .knob { transform: translateX(16px); background: currentColor; }
   .copy[hidden] { display: none; }
+  .copy select { font-size: 0.82rem; padding: 7px; }
+  .copy { padding: 0 16px 12px; }
+  /* Shared by the card's copy control, the details dialog's reference picker
+     and the add dialog's fallback. */
   label.tiny { display: block; font-size: 0.78rem; margin-bottom: 3px;
                color: var(--secondary-text-color); }
   ha-entity-picker { display: block; width: 100%; }
@@ -1464,19 +1427,17 @@ class LightCalibrationPanel extends HTMLElement {
           <span class="name"></span>
           <span class="state"></span>
         </span>
+        <svg class="chev" viewBox="0 0 24 24"><path d="${ICONS.chevron}"/></svg>
       </button>
       <div class="copy" hidden>
         <select class="copyfrom"></select>
       </div>
-      <div class="feature">
-        <button class="primary act"></button>
+      <div class="foot">
+        <button class="link act"></button>
+        <span class="grow"></span>
         <button class="switch" role="switch" aria-label="Calibration">
           <span class="track"></span>
-          <span class="thumb"><svg viewBox="0 0 24 24"><path/></svg></span>
-        </button>
-        <button class="details" title="Calibration details"
-                aria-label="Calibration details">
-          <svg viewBox="0 0 24 24"><path d="${ICONS.tune}"/></svg>
+          <span class="knob"></span>
         </button>
       </div>`;
 
@@ -1488,7 +1449,15 @@ class LightCalibrationPanel extends HTMLElement {
         bubbles: true, composed: true,
       }));
     });
+    // The footer link is this card's one action, the way an integrations card
+    // puts "21 services" there: a calibrated light opens its details, one with
+    // nothing measured starts measuring.
     el.querySelector(".act").addEventListener("click", () => {
+      if (item.row.sensor && this._hass.states[item.row.sensor]
+            .attributes.stored_points > 0) {
+        this._openDetails(item.row.sensor);
+        return;
+      }
       if (item.row.sensor) {
         this._dialog.hass = this._hass;
         this._dialog.open(item.row.sensor);
@@ -1498,8 +1467,7 @@ class LightCalibrationPanel extends HTMLElement {
       // ask what it should match.
       this._openAdd(row.light);
     });
-    el.querySelector(".details").addEventListener(
-      "click", () => item.row.sensor && this._openDetails(item.row.sensor));
+
     el.querySelector(".switch").addEventListener("click", () => {
       if (!item.row.sensor) return;
       this._hass.callService("switch", "toggle",
@@ -1518,8 +1486,6 @@ class LightCalibrationPanel extends HTMLElement {
       state: el.querySelector(".state"),
       act: el.querySelector(".act"),
       sw: el.querySelector(".switch"),
-      swIcon: el.querySelector(".thumb path"),
-      details: el.querySelector(".details"),
       copyRow: el.querySelector(".copy"),
       copy,
     };
@@ -1697,7 +1663,6 @@ class LightCalibrationPanel extends HTMLElement {
     const tint = lightTint(light);
     item.badge.style.color = tint.color;
     item.icon.setAttribute("d", tint.icon);
-    item.swIcon.setAttribute("d", ICONS.eyedropper);
 
     // A tile card's second line is the light's state, and that is what this
     // shows. The calibration only gets a word when something is worth saying.
@@ -1712,14 +1677,13 @@ class LightCalibrationPanel extends HTMLElement {
     item.state.textContent = note ? `${lightState} \u00b7 ${note}` : lightState;
     item.state.classList.toggle("warn", calibrated && !on && !(a && a.active));
 
-    // A toggle needs something to toggle, and there is nothing to look at in
-    // calibration details until something has been measured.
-    item.act.hidden = calibrated;
+    // Reads like an integrations card's "21 services": what this card has, as
+    // a link to the thing that has it. Nothing measured yet, and it is the
+    // invitation to measure instead.
+    item.act.textContent = calibrated ? a.profile_summary : "Calibrate";
     item.sw.hidden = !calibrated;
-    item.details.hidden = !calibrated;
-    item.act.textContent = "Calibrate";
     item.sw.setAttribute("aria-checked", on ? "true" : "false");
-    item.sw.title = on ? "Calibration on" : "Calibration off";
+    item.sw.title = on ? "Correction on" : "Correction off";
     item.sw.classList.toggle("on", !!on);
 
     // Copying is the alternative to measuring, so it belongs beside Calibrate

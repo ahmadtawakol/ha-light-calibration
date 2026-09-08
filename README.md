@@ -158,15 +158,16 @@ behaviour to correct and is left out. Press **Calibrate** on any of them and it
 goes straight to asking what it should match, since you have already said which
 light. No trip through Settings, and nothing to add first.
 
-Each calibrated light gets a tile, shaped like Home Assistant's own: the icon
-carries the light's current colour and state, and tapping it opens that light's
-ordinary more-info dialog, exactly as a tile card would.
+Each light gets a card shaped like the ones on Home Assistant's integrations
+page: the icon carries the light's current colour and state, and the row opens
+that light's ordinary more-info dialog.
 
-Underneath is a switch for the correction itself, so you can flip between
-corrected and raw output without opening anything, next to a button that opens
-**Calibration details** — the reference light, the measurements, fine-tuning
-and clearing the profile. A light with nothing measured yet shows **Calibrate**
-in place of the switch.
+Under the divider is a link saying what has been measured — the way an
+integrations card says "21 services" — which opens **Calibration details**: the
+reference light, the measurements, fine-tuning and clearing the profile. Beside
+it is a switch for the correction itself, so you can flip between corrected and
+raw output without opening anything. A light with nothing measured yet shows
+**Calibrate** there instead.
 
 Adding one through **Settings → Devices & Services → Add integration** still
 works and does the same thing. The entry's **Configure** button reopens the
