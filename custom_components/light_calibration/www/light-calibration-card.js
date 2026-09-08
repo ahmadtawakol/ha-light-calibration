@@ -740,11 +740,19 @@ const PANEL_STYLE = `
   .body { padding: 0 16px 88px; }
 
   .item {
-    background: var(--card-background-color, #fff);
+    background: var(--ha-card-background, var(--card-background-color, #fff));
     border-radius: var(--ha-card-border-radius, 12px);
-    box-shadow: var(--ha-card-box-shadow, 0 2px 6px rgba(0,0,0,0.12));
-    padding: 16px; color: var(--primary-text-color);
+    box-shadow: var(--ha-card-box-shadow, none);
+    border: 1px solid
+      var(--ha-card-border-color, var(--divider-color, rgba(127,127,127,0.22)));
+    color: var(--primary-text-color);
     display: flex; flex-direction: column;
+    transition: border-color 180ms ease-in-out;
+  }
+  /* A calibrated light is the thing this page is about, so it gets picked out
+     of the grid by its edge rather than by another badge inside it. */
+  .item.calibrated {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
   }
   /* Measured against home-assistant/frontend: ha-tile-icon, ha-tile-info and
      ha-control-switch. Laid out square rather than in a row, because these sit
@@ -759,7 +767,7 @@ const PANEL_STYLE = `
   .item { padding: 0; gap: 0; }
   .tile {
     display: flex; align-items: center; gap: 16px; width: 100%;
-    padding: 14px 16px; background: none; border: none; cursor: pointer;
+    padding: 18px; background: none; border: none; cursor: pointer;
     font: inherit; color: inherit; text-align: left;
   }
   .badge {
@@ -792,11 +800,15 @@ const PANEL_STYLE = `
     fill: var(--secondary-text-color); opacity: 0.7;
   }
   .foot {
-    display: flex; align-items: center; gap: 12px; min-height: 48px;
-    padding: 6px 16px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 12px; min-height: 52px;
+    padding: 8px 18px; box-sizing: border-box;
     border-top: 1px solid var(--divider-color, rgba(127,127,127,0.2));
   }
   .foot .grow { flex: 1; }
+  /* Nothing measured yet: the one action sits where the switch would, so the
+     footer reads the same way down the grid whichever state a card is in. */
+  .foot.pending .grow { order: 1; }
+  .foot.pending .act { order: 2; }
   .link {
     background: none; border: none; padding: 0; cursor: pointer; font: inherit;
     font-size: 0.9rem; color: var(--primary-color); text-align: left;
@@ -823,9 +835,6 @@ const PANEL_STYLE = `
     transition: transform 180ms ease-in-out, background 180ms ease-in-out;
   }
   .switch.on .knob { transform: translateX(16px); background: currentColor; }
-  .copy[hidden] { display: none; }
-  .copy select { font-size: 0.82rem; padding: 7px; }
-  .copy { padding: 0 16px 12px; }
   /* Shared by the card's copy control, the details dialog's reference picker
      and the add dialog's fallback. */
   label.tiny { display: block; font-size: 0.78rem; margin-bottom: 3px;
@@ -880,6 +889,21 @@ const PANEL_STYLE = `
     background: var(--divider-color, #ddd);
   }
   .scrim .dots span.on { background: var(--primary-color); }
+  .scrim .choices { display: flex; flex-direction: column; gap: 10px; }
+  .scrim .choices[hidden] { display: none; }
+  .scrim .choice {
+    display: flex; flex-direction: column; gap: 3px; text-align: left;
+    padding: 14px 16px; border-radius: var(--ha-border-radius-lg, 12px);
+    border: 1px solid var(--divider-color, rgba(127,127,127,0.22));
+    background: none; color: inherit; font: inherit; cursor: pointer;
+    transition: background 150ms, border-color 150ms;
+  }
+  .scrim .choice:hover {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+  }
+  .scrim .choice b { font-size: 0.95rem; font-weight: 500; }
+  .scrim .choice span { font-size: 0.85rem; color: var(--secondary-text-color); }
   .scrim .err {
     color: var(--error-color, #db4437); font-size: 0.88rem; margin-top: 12px;
     border-left: 3px solid currentColor; padding-left: 12px;
@@ -991,9 +1015,19 @@ class LightCalibrationPanel extends HTMLElement {
     adder.className = "scrim add-scrim";
     adder.innerHTML = `
       <div class="dialog" role="dialog" aria-modal="true">
-        <div class="dots"><span></span><span></span></div>
+        <div class="dots"></div>
         <h2 class="ask"></h2>
         <div class="field"><div class="pick"></div></div>
+        <div class="choices" hidden>
+          <button class="choice" data-method="new">
+            <b>Measure it now</b>
+            <span>Match it against the reference by eye, one setting at a time.</span>
+          </button>
+          <button class="choice" data-method="copy">
+            <b>Copy another light's calibration</b>
+            <span>For a second fixture of the same model, already measured.</span>
+          </button>
+        </div>
         <div class="err" hidden></div>
         <div class="actions">
           <button class="flat quiet left" data-act="cancel">Cancel</button>
@@ -1066,6 +1100,17 @@ class LightCalibrationPanel extends HTMLElement {
       "click", () => this._addBack());
     adder.querySelector('[data-act="go"]').addEventListener(
       "click", () => this._addNext());
+    for (const choice of adder.querySelectorAll(".choice")) {
+      choice.addEventListener("click", () => {
+        this._addMethod = choice.dataset.method;
+        if (this._addMethod === "copy") {
+          this._addStep = 3;
+          this._renderAddStep();
+          return;
+        }
+        this._submitAdd();
+      });
+    }
     this._body = wrap.querySelector("#body");
     this._scope = "calibrated";
     this._query = "";
@@ -1232,29 +1277,63 @@ class LightCalibrationPanel extends HTMLElement {
   async _openAdd(preTarget) {
     // Started from a light's own card, the first question is already answered.
     this._addPicked = [preTarget || "", ""];
+    this._addMethod = null;
+    this._addSource = "";
     this._addStep = preTarget ? 1 : 0;
     this._setAddError("");
     this._adder.classList.add("open");
     await this._renderAddStep();
   }
 
-  /* One question per step. The heading is the whole prompt -- a light that
-     looks wrong, then a light to match it against -- so there is nothing else
-     on the step to read. */
+  /* Every calibrated light is a profile this one could take instead of
+     measuring its own. No such light, no choice to offer. */
+  _addSources() {
+    return calibrationSensors(this._hass).filter(
+      (e) => this._hass.states[e].attributes.stored_points > 0);
+  }
+
+  /* One question per step. Two always -- which light, and what it should match.
+     A third when there is a calibration worth copying, and a fourth to say
+     which, so the shortest path stays two steps. */
   async _renderAddStep() {
     const step = this._addStep;
-    const dialog = this._adder;
-    dialog.querySelector(".ask").textContent = step === 0
-      ? "Which light looks wrong?"
-      : "Which light should it match?";
-    dialog.querySelectorAll(".dots span").forEach(
-      (dot, i) => dot.classList.toggle("on", i <= step));
-    dialog.querySelector('[data-act="back"]').style.display =
-      step === 0 ? "none" : "";
-    const go = dialog.querySelector('[data-act="go"]');
-    go.textContent = step === 0 ? "Next" : "Start calibrating";
+    const d = this._adder;
+    const sources = this._addSources();
+    const total = !sources.length ? 2 : this._addMethod === "copy" ? 4 : 3;
+
+    d.querySelector(".ask").textContent = [
+      "Which light looks wrong?",
+      "Which light should it match?",
+      "How should it be calibrated?",
+      "Copy which light's calibration?",
+    ][step];
+
+    d.querySelector(".dots").innerHTML = Array.from(
+      { length: total }, (_, i) => `<span class="${i <= step ? "on" : ""}"></span>`
+    ).join("");
+
+    const choosing = step === 2;
+    d.querySelector(".choices").hidden = !choosing;
+    d.querySelector(".field").hidden = choosing;
+    d.querySelector('[data-act="back"]').style.display = step === 0 ? "none" : "";
+    const go = d.querySelector('[data-act="go"]');
+    go.hidden = choosing;
     go.disabled = false;
+    go.textContent = step === 3 ? "Copy calibration"
+      : step === 1 && !sources.length ? "Start calibrating"
+      : "Next";
     this._setAddError("");
+    if (choosing) return;
+
+    if (step === 3) {
+      const holder = d.querySelector(".pick");
+      holder.replaceChildren();
+      const select = document.createElement("select");
+      this._fillCopyOptions(select, sources);
+      select.value = this._addSource;
+      holder.appendChild(select);
+      return;
+    }
 
     // The displaced fixtures are never an answer to either question: they are
     // the uncorrected output of a light already calibrated, so matching against
@@ -1266,10 +1345,9 @@ class LightCalibrationPanel extends HTMLElement {
       raw.add(behind);
       calibrated.add(behind.replace(/_raw$/, ""));
     }
-    // Step one also hides lights this integration already stands in front of;
-    // step two hides the light being calibrated, so the two can never be the
-    // same and that rejection can never come up. A calibrated light is a fine
-    // reference, though -- often the best one.
+    // Step one also hides lights already calibrated; step two hides the light
+    // being calibrated, so the two can never be the same. A calibrated light is
+    // a fine reference, though -- often the best one.
     const skip = step === 0
       ? new Set([...raw, ...calibrated])
       : new Set([...raw, this._addPicked[0]]);
@@ -1305,13 +1383,21 @@ class LightCalibrationPanel extends HTMLElement {
   }
 
   async _addBack() {
-    this._addStep = 0;
+    this._addStep = this._addStep === 3 ? 2 : this._addStep - 1;
+    if (this._addStep < 0) this._addStep = 0;
+    if (this._addStep < 2) this._addMethod = null;
     await this._renderAddStep();
   }
 
   async _addNext() {
     const holder = this._adder.querySelector(".pick").firstChild;
     const value = (holder && holder.value) || "";
+    if (this._addStep === 3) {
+      if (!value) { this._setAddError("Pick a light to copy from."); return; }
+      this._addSource = value;
+      await this._submitAdd();
+      return;
+    }
     if (!value) {
       this._setAddError("Pick a light.");
       return;
@@ -1319,6 +1405,11 @@ class LightCalibrationPanel extends HTMLElement {
     this._addPicked[this._addStep] = value;
     if (this._addStep === 0) {
       this._addStep = 1;
+      await this._renderAddStep();
+      return;
+    }
+    if (this._addSources().length) {
+      this._addStep = 2;
       await this._renderAddStep();
       return;
     }
@@ -1360,7 +1451,12 @@ class LightCalibrationPanel extends HTMLElement {
       );
       if (result.type === "create_entry") {
         this._closeAdd();
-        await this._openWhenReady(result.result.entry_id);
+        const entryId = result.result.entry_id;
+        if (this._addSource) {
+          await this._copyWhenReady(entryId, this._addSource);
+        } else {
+          await this._openWhenReady(entryId);
+        }
         return;
       }
       // Came back with the form: say why, and drop the half-finished flow so it
@@ -1378,6 +1474,30 @@ class LightCalibrationPanel extends HTMLElement {
       } catch (err) { /* already gone */ }
     }
     go.disabled = false;
+  }
+
+  /* Chose to copy rather than measure: hand the profile over as soon as the
+     new entry has entities, and do not drop into calibration -- the whole point
+     of copying is not having to. */
+  async _copyWhenReady(entryId, source) {
+    this._autoOpened = true;   // suppress the open-on-empty-profile behaviour
+    const sensor = await this._sensorFor(entryId);
+    if (!sensor) return;
+    const from = this._hass.states[source].attributes;
+    this._hass.callService("light_calibration", "copy_profile", {
+      entry_id: this._hass.states[sensor].attributes.entry_id,
+      source_entry_id: from.entry_id,
+    });
+  }
+
+  async _sensorFor(entryId) {
+    for (let i = 0; i < 40; i++) {
+      const found = calibrationSensors(this._hass).find(
+        (e) => this._hass.states[e].attributes.entry_id === entryId);
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return null;
   }
 
   /* The entry exists before its entities do. Wait for the sensor, then drop
@@ -1429,9 +1549,6 @@ class LightCalibrationPanel extends HTMLElement {
         </span>
         <svg class="chev" viewBox="0 0 24 24"><path d="${ICONS.chevron}"/></svg>
       </button>
-      <div class="copy" hidden>
-        <select class="copyfrom"></select>
-      </div>
       <div class="foot">
         <button class="link act"></button>
         <span class="grow"></span>
@@ -1473,10 +1590,6 @@ class LightCalibrationPanel extends HTMLElement {
       this._hass.callService("switch", "toggle",
         { entity_id: item.row.sensor.replace(/^sensor\./, "switch.") });
     });
-    const copy = el.querySelector(".copyfrom");
-    copy.addEventListener(
-      "change", () => item.row.sensor && this._copyFrom(item.row.sensor, copy));
-
     const item = {
       el,
       row,
@@ -1486,8 +1599,7 @@ class LightCalibrationPanel extends HTMLElement {
       state: el.querySelector(".state"),
       act: el.querySelector(".act"),
       sw: el.querySelector(".switch"),
-      copyRow: el.querySelector(".copy"),
-      copy,
+      foot: el.querySelector(".foot"),
     };
     return item;
   }
@@ -1677,26 +1789,14 @@ class LightCalibrationPanel extends HTMLElement {
     item.state.textContent = note ? `${lightState} \u00b7 ${note}` : lightState;
     item.state.classList.toggle("warn", calibrated && !on && !(a && a.active));
 
-    // Reads like an integrations card's "21 services": what this card has, as
-    // a link to the thing that has it. Nothing measured yet, and it is the
-    // invitation to measure instead.
-    item.act.textContent = calibrated ? a.profile_summary : "Calibrate";
+    item.el.classList.toggle("calibrated", calibrated);
+    item.foot.classList.toggle("pending", !calibrated);
+    item.act.textContent = calibrated ? "Calibration details" : "Calibrate";
     item.sw.hidden = !calibrated;
     item.sw.setAttribute("aria-checked", on ? "true" : "false");
     item.sw.title = on ? "Correction on" : "Correction off";
     item.sw.classList.toggle("on", !!on);
 
-    // Copying is the alternative to measuring, so it belongs beside Calibrate
-    // on a light that has nothing yet -- but only once there is an entry to
-    // copy into. Once calibrated it moves into Details.
-    const sources = sensor && !calibrated ? this._copySources(sensor) : [];
-    item.copyRow.hidden = sources.length === 0;
-    const key = sources.map(
-      (e) => e + ":" + this._hass.states[e].attributes.stored_points).join(",");
-    if (sources.length && item.copyKey !== key) {
-      item.copyKey = key;
-      this._fillCopyOptions(item.copy, sources);
-    }
   }
 
 }

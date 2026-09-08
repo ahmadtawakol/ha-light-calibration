@@ -114,11 +114,15 @@ Two units of the same model are usually wrong in the same way, so there is no
 need to measure both. Calibrate one, then copy its profile to the other — the
 difference between eight minutes and none.
 
-Open the light you want to change and pick the source from **Copy calibration
-from** — on the card for a light with no profile yet, and under **Details** for
-one that already has measurements of its own. It replaces rather than merges,
-and asks first: only worth doing between fixtures of the same model, since a
-profile describes one particular fixture's errors.
+When you add a light and something has already been calibrated, the flow asks
+how to calibrate it: measure it now, or copy another light's calibration. Copy,
+and it asks which — and the new light is set up already matching, with no pass
+through the sliders at all.
+
+An existing light can take another's calibration from **Calibration details**.
+It replaces rather than merges, and asks first: only worth doing between
+fixtures of the same model, since a profile describes one particular fixture's
+errors.
 
 There is a `copy_profile` service for doing it from a script.
 
@@ -162,12 +166,12 @@ Each light gets a card shaped like the ones on Home Assistant's integrations
 page: the icon carries the light's current colour and state, and the row opens
 that light's ordinary more-info dialog.
 
-Under the divider is a link saying what has been measured — the way an
-integrations card says "21 services" — which opens **Calibration details**: the
-reference light, the measurements, fine-tuning and clearing the profile. Beside
-it is a switch for the correction itself, so you can flip between corrected and
-raw output without opening anything. A light with nothing measured yet shows
-**Calibrate** there instead.
+Under the divider, a calibrated light offers **Calibration details** — the
+reference light, the measurements, fine-tuning and clearing the profile — next
+to a switch for the correction itself, so you can flip between corrected and raw
+output without opening anything. Calibrated cards carry a tinted border, so the
+lights this integration is actually correcting stand out in the grid. A light
+with nothing measured shows **Calibrate**.
 
 Adding one through **Settings → Devices & Services → Add integration** still
 works and does the same thing. The entry's **Configure** button reopens the
