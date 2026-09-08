@@ -141,6 +141,9 @@ Adding a light opens the calibration dialog straight away. You can reopen it any
 time from the entry's **Configure** button — the panel is scoped to the entry
 you clicked.
 
+**Light Calibration** appears in the sidebar, listing every calibrated light.
+The entry's **Configure** button opens the same page scoped to that one light.
+
 The frontend module is served by the integration itself and registered
 automatically. There is no Lovelace resource to add and no card to place on a
 dashboard.

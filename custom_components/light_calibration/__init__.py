@@ -48,6 +48,8 @@ CARD_BASE = "/light_calibration"
 CARD_FILE = "light-calibration-card.js"
 PANEL_URL_PATH = "light-calibration"
 PANEL_COMPONENT = "light-calibration-panel"
+PANEL_TITLE = "Light Calibration"
+PANEL_ICON = "mdi:eyedropper-variant"
 
 SERVICE_START = "start_calibration"
 SERVICE_ADJUST = "adjust"
@@ -115,11 +117,19 @@ async def _async_register_panel(hass: HomeAssistant, module_url: str) -> None:
     this panel instead of an options-flow form, so calibration is reachable from
     Settings without putting a card on a dashboard. Older cores do not accept the
     argument; fall back to a plain panel so the page still exists.
+
+    It is also given a sidebar entry. Configure reaches the panel scoped to one
+    light, which is right when you arrived from that entry but a dead end when
+    what you actually wanted was a different light -- and with no other way in,
+    a control sitting on the next card down may as well not exist. The sidebar
+    entry opens it unscoped, listing every calibrated light.
     """
     kwargs = dict(
         webcomponent_name=PANEL_COMPONENT,
         frontend_url_path=PANEL_URL_PATH,
         module_url=module_url,
+        sidebar_title=PANEL_TITLE,
+        sidebar_icon=PANEL_ICON,
         embed_iframe=False,
         require_admin=True,
     )
