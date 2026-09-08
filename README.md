@@ -210,6 +210,9 @@ uv run --with pytest pytest tests/
   2000 K still gives 2000 K.
 - A light with no colour control at all — on/off, or brightness only — cannot
   be calibrated, and is rejected when you try to add it.
+- A colour and a level are kept separate, as everywhere else in Home Assistant:
+  asking for a dim `rgb_color` sets the colour at full and puts the level into
+  brightness, so the light reports what it is actually showing.
 - Calibration is only as good as the reference. It matches lights to each
   other, not to a colorimetric standard.
 - The frontend URL contains a hash of the file's contents. Home Assistant is

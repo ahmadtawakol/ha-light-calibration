@@ -222,6 +222,41 @@ def test_hs_to_rgb_clamps_saturation():
     assert cm.hs_to_rgb(0, -50) == cm.hs_to_rgb(0, 0)
 
 
+# ----------------------------------------------------------- colour versus level
+
+
+def test_split_level_separates_a_dim_colour_from_a_dark_one():
+    """(80,0,0) is red at a third of the level, not a dark shade of red."""
+    colour, level = cm.split_level((80, 0, 0))
+    assert colour == (255, 0, 0)
+    assert level == pytest.approx(80 / 255)
+
+
+def test_split_level_leaves_a_full_colour_alone():
+    for rgb in [(255, 0, 0), (255, 167, 87), (0, 255, 0), (12, 255, 200)]:
+        colour, level = cm.split_level(rgb)
+        assert colour == rgb
+        assert level == 1.0
+
+
+def test_split_level_preserves_the_colour():
+    """Only the level comes out -- the hue and saturation are untouched."""
+    for rgb in [(80, 0, 0), (40, 26, 13), (100, 100, 50), (9, 3, 6)]:
+        colour, _ = cm.split_level(rgb)
+        assert cm.rgb_to_hs(colour) == pytest.approx(cm.rgb_to_hs(rgb), abs=1.0)
+
+
+def test_split_level_of_black():
+    assert cm.split_level((0, 0, 0)) == ((0, 0, 0), 0.0)
+
+
+def test_a_dim_colour_no_longer_reads_as_a_dark_one():
+    """The reason this exists: a dashboard icon tinted from the reported colour
+    was coming out very nearly black for a dim request."""
+    dim, _ = cm.split_level((80, 0, 0))
+    assert max(dim) == 255
+
+
 # ----------------------------------------------------------------- composition
 
 

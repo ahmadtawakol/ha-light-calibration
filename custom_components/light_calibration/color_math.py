@@ -190,6 +190,29 @@ def apply_tint_v1(rgb: tuple[int, int, int], tint: float) -> tuple[int, int, int
     )
 
 
+def split_level(rgb: tuple[int, int, int]) -> tuple[tuple[int, int, int], float]:
+    """Separate a requested colour from the level it was asked at.
+
+    ``rgb_color`` conventionally describes a colour and nothing else, with
+    brightness carrying the level -- which is why an integration reports it with
+    its largest channel at full. Storing a request verbatim instead makes a dim
+    red indistinguishable from a dark one, and anything reading the state back
+    has to guess: a dashboard icon tinted from ``(80, 0, 0)`` comes out very
+    nearly black.
+
+    The correction path already ignores the level, so keeping it in the colour
+    also meant a dim request drove the fixture at full and only *reported* itself
+    dim. Returns the colour at full level and the level it was carrying.
+    """
+    peak = max(rgb)
+    if not peak:
+        return rgb, 0.0
+    return (
+        tuple(int(round(c * 255.0 / peak)) for c in rgb),
+        peak / 255.0,
+    )
+
+
 def rgb_to_hs(rgb: tuple[int, int, int]) -> tuple[float, float]:
     """Hue in degrees and saturation in percent. Level is carried separately."""
     h, _, s = _hls(rgb)

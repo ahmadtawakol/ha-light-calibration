@@ -22,7 +22,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 
 from . import capability
 from .calibration import CalibrationProfile
-from .color_math import rgb_to_kelvin
+from .color_math import rgb_to_kelvin, split_level
 from .session import CalibrationSession
 from .const import (
     CONF_ORIGINAL_ID,
@@ -213,13 +213,20 @@ class CalibratedLight(LightEntity):
     # ------------------------------------------------------------------ action
     async def async_turn_on(self, **kwargs: Any) -> None:
         brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness or 255)
-        brightness_pct = max(1.0, min(100.0, brightness / 255.0 * 100.0))
         profile = self._active_profile
         color_capable = capability.supports_color(self.hass, self._target)
+
+        # A colour and a level are separate things, so a request carrying both
+        # is split before either is used -- see split_level.
+        requested_rgb = None
+        if ATTR_RGB_COLOR in kwargs:
+            requested_rgb, level = split_level(tuple(kwargs[ATTR_RGB_COLOR]))
+            brightness *= level
+
+        brightness_pct = max(1.0, min(100.0, brightness / 255.0 * 100.0))
         data: dict[str, Any] = {ATTR_ENTITY_ID: self._target}
 
-        if ATTR_RGB_COLOR in kwargs and color_capable:
-            requested_rgb = tuple(kwargs[ATTR_RGB_COLOR])
+        if requested_rgb is not None and color_capable:
             rgb, out_pct = profile.command_for_rgb(requested_rgb, brightness_pct)
             data[ATTR_RGB_COLOR] = list(rgb)
             self._attr_color_mode = ColorMode.RGB
@@ -230,8 +237,8 @@ class CalibratedLight(LightEntity):
             # is resolved to the nearest colour temperature here rather than
             # being left to core's rgb-to-kelvin fallback, which would drop the
             # correction and shift the result by hundreds of kelvin.
-            if ATTR_RGB_COLOR in kwargs:
-                kelvin = rgb_to_kelvin(tuple(kwargs[ATTR_RGB_COLOR]))
+            if requested_rgb is not None:
+                kelvin = rgb_to_kelvin(requested_rgb)
             else:
                 kelvin = kwargs.get(
                     ATTR_COLOR_TEMP_KELVIN, self._attr_color_temp_kelvin or 2700
