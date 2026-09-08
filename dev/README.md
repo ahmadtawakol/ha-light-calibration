@@ -29,6 +29,12 @@ to the page (rather than to the harness logic) does not show up, hard-reload.
 
 ## What it covers
 
+The mock answers `callService`, `callWS` and `callApi`, so the measurements
+table and the whole add-a-light flow work end to end — including its failure
+path. Set `window.__flowError` to an error key (`same_light`,
+`no_color_control`, …) to see what the form does when the config flow rejects
+something.
+
 Buttons along the bottom switch between every state the panel and dialog have:
 the empty panel, a light nobody has calibrated, a calibrated one, a white step,
 a colour step, a comparison flash, a tunable-white fixture (no tint slider, no

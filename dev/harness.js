@@ -146,6 +146,30 @@ function hass() {
     states,
     callService: (domain, service, data) =>
       log(`${domain}.${service} ${JSON.stringify(data)}`),
+    /* The panel drives Home Assistant's config flow over the HTTP API to add a
+       light without leaving the page. Simulated here so the add dialog, its
+       error handling and the hand-off into calibration can all be exercised.
+       Set window.__flowError to a key to see the failure path. */
+    callApi: async (method, path, body) => {
+      log(`API ${method} ${path} ${body ? JSON.stringify(body) : ""}`);
+      if (method === "POST" && path === "config/config_entries/flow") {
+        return { flow_id: "flow-1", type: "form", step_id: "user" };
+      }
+      if (method === "POST" && path.startsWith("config/config_entries/flow/")) {
+        if (window.__flowError) {
+          return { type: "form", step_id: "user",
+                   errors: { base: window.__flowError } };
+        }
+        return { type: "create_entry", result: { entry_id: "01JDEVNEW" } };
+      }
+      return {};
+    },
+    localize: (key) => ({
+      "component.light_calibration.config.error.same_light":
+        "The reference and the light being calibrated have to be two different lights.",
+      "component.light_calibration.config.error.no_color_control":
+        "That light has no colour control at all -- it can't be set to a colour or a colour temperature, so there's nothing to calibrate.",
+    })[key] || key,
     /* The panel fetches measured points over the websocket rather than reading
        them off the sensor, so the mock has to answer that too. */
     callWS: async (msg) => {

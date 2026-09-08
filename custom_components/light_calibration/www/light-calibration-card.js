@@ -480,8 +480,8 @@ function calibrationSensors(hass) {
 
 /* ------------------------------------------------------------------- panel */
 
-/* Home Assistant's own add-integration dialog, opened straight onto this
-   domain, so adding a second light is not a hunt through Settings. */
+/* Settings -> Devices & services -> Add integration, scoped to this domain.
+   The fallback if driving the flow ourselves does not work out. */
 const ADD_URL = "/config/integrations/dashboard/add?domain=light_calibration";
 
 const HUE_NAMES = { 0: "red", 60: "yellow", 120: "green",
@@ -575,7 +575,36 @@ const PANEL_STYLE = `
   }
   .measurements th { color: var(--secondary-text-color); font-weight: 500; }
   .measurements td { font-variant-numeric: tabular-nums; }
+  .scrim {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: none; align-items: center; justify-content: center; z-index: 9998;
+  }
+  .scrim.open { display: flex; }
+  .scrim .dialog {
+    background: var(--card-background-color, #fff); color: var(--primary-text-color);
+    border-radius: var(--ha-card-border-radius, 12px); padding: 24px;
+    width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 64px);
+    overflow: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  }
+  .scrim h2 { margin: 0 0 4px; font-size: 1.35rem; font-weight: 400; }
+  .scrim .sub { color: var(--secondary-text-color); font-size: 0.9rem; margin-bottom: 20px; }
+  .scrim .field { margin: 16px 0; }
+  .scrim .field label { display: block; font-size: 0.85rem; margin-bottom: 4px;
+                        color: var(--secondary-text-color); }
+  .scrim .err {
+    color: var(--error-color, #db4437); font-size: 0.88rem; margin-top: 12px;
+    border-left: 3px solid currentColor; padding-left: 12px;
+  }
+  .scrim .err[hidden] { display: none; }
+  .scrim .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+  .scrim .actions .left { margin-right: auto; }
+  /* If driving the flow from here ever fails, Home Assistant's own route still
+     works and is one click away rather than a hunt. */
+  .scrim .escape { color: var(--secondary-text-color); font-size: 0.85rem;
+                   text-decoration: none; align-self: center; }
+  .scrim .escape:hover { text-decoration: underline; }
   .add { display: flex; justify-content: center; margin: 4px 0 24px; }
+  .add button { font-size: 0.95rem; }
   .add a {
     color: var(--primary-color); text-decoration: none; font-size: 0.95rem;
     padding: 9px 16px; border-radius: 8px;
@@ -650,11 +679,45 @@ class LightCalibrationPanel extends HTMLElement {
         <span>Light Calibration</span>
       </div>
       <div class="body" id="body"></div>`;
+    const adder = document.createElement("div");
+    adder.className = "scrim add-scrim";
+    adder.innerHTML = `
+      <div class="dialog" role="dialog" aria-modal="true">
+        <h2>Calibrate a light</h2>
+        <div class="sub">Pick the light that looks wrong and one you trust to
+          match it against. Calibration starts as soon as this is created.</div>
+        <div class="field">
+          <label>Light to calibrate</label><div class="pick target"></div>
+        </div>
+        <div class="field">
+          <label>Reference light (the one that looks right)</label>
+          <div class="pick reference"></div>
+        </div>
+        <div class="err" hidden></div>
+        <div class="actions">
+          <a class="escape left" href="${ADD_URL}">Add from Settings instead</a>
+          <button class="flat quiet" data-act="cancel">Cancel</button>
+          <button class="primary" data-act="go">Start calibrating</button>
+        </div>
+      </div>`;
+    this._adder = adder;
     this._dialog = document.createElement("light-calibration-dialog");
-    this.shadowRoot.append(style, wrap, this._dialog);
+    this.shadowRoot.append(style, wrap, adder, this._dialog);
+    adder.addEventListener("click", (e) => {
+      if (e.target === adder) this._closeAdd();
+    });
+    adder.querySelector('[data-act="cancel"]').addEventListener(
+      "click", () => this._closeAdd());
+    adder.querySelector('[data-act="go"]').addEventListener(
+      "click", () => this._submitAdd());
     this._body = wrap.querySelector("#body");
     wrap.querySelector(".back").addEventListener("click", () => this._goBack());
     this._pickerReady = loadEntityPicker();
+    // The add buttons are written into .body as markup whenever the list is
+    // rebuilt, so the click is caught here rather than re-bound each time.
+    this._body.addEventListener("click", (e) => {
+      if (e.target.closest("[data-add]")) this._openAdd();
+    });
     this._built = true;
   }
 
@@ -693,7 +756,7 @@ class LightCalibrationPanel extends HTMLElement {
              <p>Pick a light you trust as the reference and a light that doesn't
              match it, and you'll be matching them by eye a few seconds later.</p>
            </div>
-           <div class="add"><a href="${ADD_URL}">+ Calibrate a light</a></div>`;
+           <div class="add"><button class="primary" data-add>Calibrate a light</button></div>`;
       }
       return;
     }
@@ -713,7 +776,7 @@ class LightCalibrationPanel extends HTMLElement {
       }
       const add = document.createElement("div");
       add.className = "add";
-      add.innerHTML = `<a href="${ADD_URL}">+ Calibrate another light</a>`;
+      add.innerHTML = `<button class="flat" data-add>+ Calibrate another light</button>`;
       this._body.appendChild(add);
     }
     for (const [entity, item] of this._items) this._updateItem(entity, item);
@@ -731,6 +794,131 @@ class LightCalibrationPanel extends HTMLElement {
         this._dialog.hass = this._hass;
         this._dialog.open(fresh);
       }
+    }
+  }
+
+  /* Home Assistant's config flow is drivable over its own HTTP API, and this
+     integration owns both ends of it: the form is always the same two lights.
+     So the panel asks for them here and submits, instead of sending people out
+     to Settings, through a flow dialog, and back again to start calibrating. */
+  async _openAdd() {
+    this._setAddError("");
+    this._adder.classList.add("open");
+    const native = await this._pickerReady;
+    const skip = new Set();
+    for (const e of calibrationSensors(this._hass)) {
+      const raw = this._hass.states[e].attributes.calibrating || "";
+      skip.add(raw).add(raw.replace(/_raw$/, ""));
+    }
+    for (const slot of ["target", "reference"]) {
+      const holder = this._adder.querySelector(`.pick.${slot}`);
+      if (holder.firstChild) {
+        if (holder.firstChild.hass) holder.firstChild.hass = this._hass;
+        continue;
+      }
+      if (native) {
+        const picker = document.createElement("ha-entity-picker");
+        picker.hass = this._hass;
+        picker.includeDomains = ["light"];
+        picker.allowCustomEntity = false;
+        // Nothing this integration already stands in front of: the flow would
+        // reject it anyway, and a picker that cannot offer a mistake is kinder
+        // than an error afterwards.
+        if (slot === "target") picker.excludeEntities = [...skip];
+        holder.appendChild(picker);
+      } else {
+        const select = document.createElement("select");
+        select.innerHTML =
+          `<option value="">Choose a light...</option>` +
+          Object.keys(this._hass.states)
+            .filter((e) => e.startsWith("light.") &&
+                           !(slot === "target" && skip.has(e)))
+            .sort()
+            .map((e) => `<option value="${e}">${this._name(e)}</option>`)
+            .join("");
+        holder.appendChild(select);
+      }
+    }
+  }
+
+  _closeAdd() {
+    this._adder.classList.remove("open");
+  }
+
+  _setAddError(text) {
+    const box = this._adder.querySelector(".err");
+    box.textContent = text;
+    box.hidden = !text;
+  }
+
+  _addValue(slot) {
+    const el = this._adder.querySelector(`.pick.${slot}`).firstChild;
+    return (el && el.value) || "";
+  }
+
+  /* The flow answers with error keys, which are the same ones the translations
+     already carry -- so the message is whatever the setup form would have said. */
+  _addErrorText(code) {
+    const key = `component.light_calibration.config.error.${code}`;
+    const localized = this._hass.localize && this._hass.localize(key);
+    return localized && localized !== key
+      ? localized : `That light cannot be calibrated (${code}).`;
+  }
+
+  async _submitAdd() {
+    const target = this._addValue("target");
+    const reference = this._addValue("reference");
+    if (!target || !reference) {
+      this._setAddError("Pick both lights.");
+      return;
+    }
+    const go = this._adder.querySelector('[data-act="go"]');
+    go.disabled = true;
+    this._setAddError("");
+    let flow = null;
+    try {
+      flow = await this._hass.callApi("POST", "config/config_entries/flow", {
+        handler: "light_calibration", show_advanced_options: false,
+      });
+      const result = await this._hass.callApi(
+        "POST", `config/config_entries/flow/${flow.flow_id}`,
+        { reference_entity: reference, target_entity: target },
+      );
+      if (result.type === "create_entry") {
+        this._closeAdd();
+        await this._openWhenReady(result.result.entry_id);
+        return;
+      }
+      // Came back with the form: say why, and drop the half-finished flow so it
+      // does not sit in Settings as something in progress.
+      this._setAddError(this._addErrorText(
+        (result.errors && result.errors.base) || result.reason || "unknown"));
+    } catch (err) {
+      this._setAddError(
+        (err && (err.message || (err.body && err.body.message))) || String(err));
+    }
+    if (flow) {
+      try {
+        await this._hass.callApi(
+          "DELETE", `config/config_entries/flow/${flow.flow_id}`);
+      } catch (err) { /* already gone */ }
+    }
+    go.disabled = false;
+  }
+
+  /* The entry exists before its entities do. Wait for the sensor, then drop
+     straight into calibration -- which is the whole point of adding one. */
+  async _openWhenReady(entryId) {
+    for (let i = 0; i < 40; i++) {
+      const found = calibrationSensors(this._hass).find(
+        (e) => this._hass.states[e].attributes.entry_id === entryId);
+      if (found) {
+        this._autoOpened = true;   // this is the auto-open; do not also fire it
+        this._dialog.hass = this._hass;
+        this._dialog.open(found);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
   }
 

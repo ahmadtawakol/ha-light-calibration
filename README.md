@@ -144,12 +144,16 @@ five whites without disturbing a Thorough profile.
 ## Installing
 
 HACS → ⋮ → Custom repositories → this repo URL, category **Integration**.
-Download, restart Home Assistant, then **Settings → Devices & Services → Add
-integration → Light Calibration**.
+Download and restart Home Assistant.
 
-Adding a light opens the calibration dialog straight away. You can reopen it any
-time from the entry's **Configure** button — the panel is scoped to the entry
-you clicked.
+**Light Calibration** then appears in the sidebar. Press **Calibrate a light**,
+pick the light that looks wrong and one you trust to match it against, and the
+calibration starts immediately — no trip through Settings. Everything after
+that happens on the same page.
+
+Adding one through **Settings → Devices & Services → Add integration** still
+works and does the same thing. Either way, the entry's **Configure** button
+reopens the panel scoped to that one light.
 
 **Light Calibration** appears in the sidebar, listing every calibrated light.
 The entry's **Configure** button opens the same page scoped to that one light.
