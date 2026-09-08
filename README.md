@@ -115,18 +115,19 @@ need to measure both. Calibrate one, then copy its profile to the other — the
 difference between eight minutes and none.
 
 Open the light you want to change and pick the source from **Copy calibration
-from**. It replaces rather than merges, and asks first — only worth doing
-between fixtures of the same model, since a profile describes one particular
-fixture's errors.
+from** — on the card for a light with no profile yet, and under **Details** for
+one that already has measurements of its own. It replaces rather than merges,
+and asks first: only worth doing between fixtures of the same model, since a
+profile describes one particular fixture's errors.
 
 There is a `copy_profile` service for doing it from a script.
 
 ## Seeing what was measured
 
-**Show measurements** on a light's card lists every point in the profile: what
-was asked for, and what the fixture had to be sent to produce it. That is the
-only view of a calibration as a whole — the numbers live in the config entry,
-not in any entity.
+**Details → Show measurements** lists every point in the profile: what was
+asked for, and what the fixture had to be sent to produce it. That is the only
+view of a calibration as a whole — the numbers live in the config entry, not in
+any entity.
 
 For the raw data, the entry's ⋮ → **Download diagnostics** gives the stored
 points as JSON, along with the corrections the profile produces at a spread of
@@ -146,10 +147,15 @@ five whites without disturbing a Thorough profile.
 HACS → ⋮ → Custom repositories → this repo URL, category **Integration**.
 Download and restart Home Assistant.
 
-**Light Calibration** then appears in the sidebar. Press **Calibrate a light**,
-pick the light that looks wrong and one you trust to match it against, and the
-calibration starts immediately — no trip through Settings. Everything after
-that happens on the same page.
+**Light Calibration** then appears in the sidebar, listing every calibrated
+light as a card: its name, whether the correction is being applied right now,
+and how much was measured. Press **Calibrate a light**, pick the light that
+looks wrong and one you trust to match it against, and the calibration starts
+immediately — no trip through Settings.
+
+Each card carries the one action you want most — **Calibrate**, or **Fine-tune**
+once there is a profile. **Details** holds the rest: the reference light, the
+measurements, the on/off switch, and clearing the profile.
 
 Adding one through **Settings → Devices & Services → Add integration** still
 works and does the same thing. The entry's **Configure** button reopens the

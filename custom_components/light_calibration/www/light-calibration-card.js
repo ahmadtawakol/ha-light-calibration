@@ -534,35 +534,64 @@ const PANEL_STYLE = `
   }
   .head .back:hover { background: rgba(255,255,255,0.12); }
   .head .back svg { width: 24px; height: 24px; fill: currentColor; }
-  .body { padding: 24px; max-width: 720px; margin: 0 auto; }
+  .body { padding: 24px; max-width: 1040px; margin: 0 auto; }
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  }
   .item {
     background: var(--card-background-color, #fff);
     border-radius: var(--ha-card-border-radius, 12px);
     box-shadow: var(--ha-card-box-shadow, 0 2px 6px rgba(0,0,0,0.12));
-    padding: 20px; margin-bottom: 16px; color: var(--primary-text-color);
+    padding: 16px; color: var(--primary-text-color);
+    display: flex; flex-direction: column;
   }
-  .item h3 { margin: 0 0 2px; font-size: 1.1rem; font-weight: 500; }
-  .meta { color: var(--secondary-text-color); font-size: 0.9rem; }
-  .ref, .copy { margin-top: 16px; }
+  .item .top { display: flex; align-items: flex-start; gap: 9px; }
+  /* Whether a light is corrected right now, before reading a word of it. */
+  .dot {
+    flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px;
+    background: var(--divider-color, #ccc);
+    box-shadow: 0 0 0 3px transparent;
+  }
+  .dot.on     { background: var(--success-color, #43a047); }
+  .dot.off    { background: var(--warning-color, #ffa726); }
+  .dot.busy   { background: var(--primary-color); }
+  .item h3 {
+    margin: 0; font-size: 1rem; font-weight: 500; line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .meta { color: var(--secondary-text-color); font-size: 0.85rem; margin-top: 2px; }
+  .meta .flag { color: var(--warning-color, #ffa726); }
+  /* Pushed to the bottom so the actions line up across the row however much
+     status text a card happens to carry. */
+  .item .row { display: flex; gap: 4px; align-items: center;
+               margin-top: auto; padding-top: 14px; }
+  .item .row .spacer { flex: 1; }
+  .item .row button { padding: 7px 11px; font-size: 0.88rem; }
+  .copy { margin-top: 12px; }
   .copy[hidden] { display: none; }
-  .ref label, .copy label { display: block; font-size: 0.85rem; margin-bottom: 4px;
-                            color: var(--secondary-text-color); }
+  label.tiny { display: block; font-size: 0.78rem; margin-bottom: 3px;
+               color: var(--secondary-text-color); }
   ha-entity-picker { display: block; width: 100%; }
   select {
-    width: 100%; padding: 9px; border-radius: 8px; font-size: 0.9rem;
+    width: 100%; padding: 8px; border-radius: 8px; font-size: 0.88rem;
     background: var(--secondary-background-color, #f0f0f0);
     color: var(--primary-text-color);
     border: 1px solid var(--divider-color, #ccc); font-family: inherit;
   }
-  .row { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
-  .row .spacer { flex: 1; }
   .empty { color: var(--secondary-text-color); line-height: 1.5; }
-  .item h3 { margin: 0 0 2px; font-size: 1.15rem; font-weight: 500; }
-  .item .meta code {
-    background: var(--secondary-background-color, #f0f0f0);
-    padding: 1px 5px; border-radius: 4px; font-size: 0.85em;
+  .empty h3 { font-size: 1.1rem; margin: 0 0 6px; }
+  /* details modal */
+  .section { margin: 18px 0; }
+  .section > label.tiny { margin-bottom: 5px; }
+  .state-row {
+    display: flex; align-items: center; gap: 10px; padding: 10px 0;
+    border-bottom: 1px solid var(--divider-color, #e0e0e0);
   }
-  .measurements { margin-top: 16px; font-size: 0.85rem; overflow-x: auto; }
+  .state-row .grow { flex: 1; }
+  /* button.flat sets a colour, so this has to out-specify it. */
+  button.flat.danger { color: var(--error-color, #db4437); }
+  .measurements { margin-top: 14px; font-size: 0.85rem; overflow-x: auto; }
   .measurements[hidden] { display: none; }
   .measurements table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
   .measurements th, .measurements td {
@@ -691,8 +720,54 @@ class LightCalibrationPanel extends HTMLElement {
         </div>
       </div>`;
     this._adder = adder;
+
+    const details = document.createElement("div");
+    details.className = "scrim details-scrim";
+    details.innerHTML = `
+      <div class="dialog" role="dialog" aria-modal="true">
+        <h2 class="dname"></h2>
+        <div class="sub"><code class="did"></code></div>
+        <div class="state-row">
+          <div class="grow">Correction<div class="meta dstate"></div></div>
+          <button class="tonal dtoggle"></button>
+        </div>
+        <div class="section dref">
+          <label class="tiny">Reference light</label>
+          <div class="dpick"></div>
+        </div>
+        <div class="section dcopy" hidden>
+          <label class="tiny">Copy calibration from</label>
+          <select class="dcopyfrom"></select>
+        </div>
+        <div class="section dmeasure">
+          <button class="flat dshow">Show measurements</button>
+          <div class="measurements" hidden></div>
+        </div>
+        <div class="actions">
+          <button class="flat danger left dclear">Clear profile</button>
+          <button class="primary dclose">Close</button>
+        </div>
+      </div>`;
+    this._details = details;
+    details.addEventListener("click", (e) => {
+      if (e.target === details) this._closeDetails();
+    });
+    details.querySelector(".dclose").addEventListener(
+      "click", () => this._closeDetails());
+    details.querySelector(".dtoggle").addEventListener("click", () => {
+      const a = this._detailsAttrs();
+      if (a) this._hass.callService("switch", "toggle",
+        { entity_id: this._detailsEntity.replace(/^sensor\./, "switch.") });
+    });
+    details.querySelector(".dclear").addEventListener(
+      "click", () => this._clearProfile(this._detailsEntity));
+    details.querySelector(".dcopyfrom").addEventListener(
+      "change", (e) => this._copyFrom(this._detailsEntity, e.target));
+    details.querySelector(".dshow").addEventListener(
+      "click", () => this._toggleMeasurements(details));
+
     this._dialog = document.createElement("light-calibration-dialog");
-    this.shadowRoot.append(style, wrap, adder, this._dialog);
+    this.shadowRoot.append(style, wrap, adder, details, this._dialog);
     adder.addEventListener("click", (e) => {
       if (e.target === adder) this._closeAdd();
     });
@@ -761,17 +836,21 @@ class LightCalibrationPanel extends HTMLElement {
       this._key = key;
       this._items.clear();
       this._body.innerHTML = "";
+      const grid = document.createElement("div");
+      grid.className = "grid";
       for (const entity of sensors) {
         const item = this._buildItem(entity);
         this._items.set(entity, item);
-        this._body.appendChild(item.el);
+        grid.appendChild(item.el);
       }
+      this._body.appendChild(grid);
       const add = document.createElement("div");
       add.className = "add";
       add.innerHTML = `<button class="flat" data-add>+ Calibrate another light</button>`;
       this._body.appendChild(add);
     }
     for (const [entity, item] of this._items) this._updateItem(entity, item);
+    if (this._details.classList.contains("open")) this._renderDetails();
 
     // A light that has just been added has no profile yet -- drop straight into
     // calibration rather than making them find the button. Keyed on "has no
@@ -967,224 +1046,239 @@ class LightCalibrationPanel extends HTMLElement {
     return entityId.replace(/^[^.]+\./, "").replace(/_raw$/, "").replace(/_/g, " ");
   }
 
+  /* A card is a glance: which light, whether it is corrected right now, and how
+     much was measured. Everything you might change lives behind Details, so the
+     grid stays readable when there are eight of these. */
   _buildItem(entity) {
-    const a = this._hass.states[entity].attributes;
-    const entry_id = a.entry_id;
-
     const el = document.createElement("div");
     el.className = "item";
     el.innerHTML = `
-      <h3></h3>
-      <div class="meta"></div>
-      <div class="ref"><div class="picker"></div></div>
+      <div class="top">
+        <span class="dot"></span>
+        <div>
+          <h3></h3>
+          <div class="meta"></div>
+        </div>
+      </div>
       <div class="copy" hidden>
-        <label>Copy calibration from</label>
+        <label class="tiny">Copy calibration from</label>
         <select class="copyfrom"></select>
       </div>
       <div class="row">
-        <button class="primary calibrate">Calibrate</button>
-        <button class="flat toggle" hidden></button>
+        <button class="primary calibrate"></button>
         <div class="spacer"></div>
-        <button class="flat show" hidden>Show measurements</button>
-        <button class="flat clear">Clear profile</button>
-      </div>
-      <div class="measurements" hidden></div>`;
+        <button class="flat details">Details</button>
+      </div>`;
 
-    const calibrate = el.querySelector(".calibrate");
-    calibrate.addEventListener("click", () => {
+    el.querySelector(".calibrate").addEventListener("click", () => {
       this._dialog.hass = this._hass;
       this._dialog.open(entity);
     });
-    el.querySelector(".clear").addEventListener("click", () => {
-      // Throwing away a profile costs another pass with the sliders, so make it
-      // deliberate rather than a mis-click next to Calibrate.
-      const name = this._name(this._hass.states[entity].attributes.calibrating);
-      if (!window.confirm(
-        `Discard the calibration for ${name}?\n\n` +
-        `It goes back to uncorrected output, and measuring it again means ` +
-        `another pass with the sliders.`)) return;
-      this._hass.callService("light_calibration", "clear_profile", { entry_id });
-    });
-
-    // The switch shares the sensor's object_id; both are named "Calibration"
-    // on the same device.
-    const switchId = entity.replace(/^sensor\./, "switch.");
-    const toggle = el.querySelector(".toggle");
-    toggle.addEventListener("click", () => {
-      this._hass.callService("switch", "toggle", { entity_id: switchId });
-    });
-
-    // Identical fixtures are wrong in the same way, so measuring one and handing
-    // the result to the rest saves a full pass each. Replaces rather than
-    // merges, so it asks first.
+    el.querySelector(".details").addEventListener(
+      "click", () => this._openDetails(entity));
     const copy = el.querySelector(".copyfrom");
-    copy.addEventListener("change", () => {
-      const other = copy.value;
-      copy.value = "";
-      if (!other) return;
-      const to = this._hass.states[entity].attributes;
-      const from = this._hass.states[other].attributes;
-      const losing = to.stored_points > 0
-        ? `\n\n${this._name(to.calibrating)}'s own measurements ` +
-          `(${to.profile_summary}) are discarded.`
-        : "";
-      if (!window.confirm(
-        `Give ${this._name(to.calibrating)} the calibration measured for ` +
-        `${this._name(from.calibrating)} ` +
-        `(${from.profile_summary || from.stored_points + " points"})?\n\n` +
-        `Only worth it if they are the same model -- a profile describes one ` +
-        `fixture's particular errors.${losing}`)) return;
-      this._hass.callService("light_calibration", "copy_profile", {
-        entry_id: to.entry_id, source_entry_id: from.entry_id,
-      });
-    });
+    copy.addEventListener("change", () => this._copyFrom(entity, copy));
 
-    // Fetched on demand rather than carried on the sensor: a profile is a
-    // couple of kilobytes and the sensor changes on every step of a run.
-    const measurements = el.querySelector(".measurements");
-    const show = el.querySelector(".show");
-    show.addEventListener("click", async () => {
-      if (!measurements.hidden) {
-        measurements.hidden = true;
-        show.textContent = "Show measurements";
-        return;
-      }
-      show.disabled = true;
-      try {
-        const result = await this._hass.callWS({
-          type: "light_calibration/profile", entry_id,
-        });
-        measurements.innerHTML = renderPoints(result.points || []);
-        show.textContent = "Hide measurements";
-      } catch (err) {
-        measurements.textContent =
-          `Could not read the profile: ${(err && err.message) || err}`;
-      }
-      measurements.hidden = false;
-      show.disabled = false;
-    });
-
-    const item = {
+    return {
       el,
+      dot: el.querySelector(".dot"),
       title: el.querySelector("h3"),
       meta: el.querySelector(".meta"),
-      clear: el.querySelector(".clear"),
+      calibrate: el.querySelector(".calibrate"),
       copyRow: el.querySelector(".copy"),
       copy,
-      show,
-      measurements,
-      pickerSlot: el.querySelector(".picker"),
-      picker: null,
-      toggle,
-      switchId,
-      entry_id,
     };
-
-    this._pickerReady.then((ok) => this._mountPicker(entity, item, ok));
-    return item;
   }
 
-  _mountPicker(entity, item, native) {
-    const a = this._hass.states[entity].attributes;
-    const setReference = (value) => {
-      if (!value || value === this._hass.states[entity].attributes.reference_light) return;
-      this._hass.callService("light_calibration", "set_reference", {
-        entry_id: item.entry_id, entity_id: value,
-      });
-    };
+  /* Only offered on a light with nothing to lose. Once one is calibrated,
+     replacing its measurements is a thing you go looking for, not something
+     sitting next to the button you press every day. */
+  _copySources(entity) {
+    return calibrationSensors(this._hass).filter(
+      (e) => e !== entity && this._hass.states[e].attributes.stored_points > 0
+    );
+  }
 
+  _fillCopyOptions(select, sources) {
+    select.innerHTML =
+      `<option value="">Choose a light...</option>` +
+      sources.map((e) => {
+        const sa = this._hass.states[e].attributes;
+        return `<option value="${e}">${this._name(sa.calibrating)} - ` +
+               `${sa.profile_summary || sa.stored_points + " points"}</option>`;
+      }).join("");
+  }
+
+  _copyFrom(entity, select) {
+    const other = select.value;
+    select.value = "";
+    if (!other) return;
+    const to = this._hass.states[entity].attributes;
+    const from = this._hass.states[other].attributes;
+    const losing = to.stored_points > 0
+      ? `\n\n${this._name(to.calibrating)}'s own measurements ` +
+        `(${to.profile_summary}) are discarded.`
+      : "";
+    if (!window.confirm(
+      `Give ${this._name(to.calibrating)} the calibration measured for ` +
+      `${this._name(from.calibrating)} ` +
+      `(${from.profile_summary || from.stored_points + " points"})?\n\n` +
+      `Only worth it if they are the same model -- a profile describes one ` +
+      `fixture's particular errors.${losing}`)) return;
+    this._hass.callService("light_calibration", "copy_profile", {
+      entry_id: to.entry_id, source_entry_id: from.entry_id,
+    });
+  }
+
+  _clearProfile(entity) {
+    const a = this._hass.states[entity].attributes;
+    if (!window.confirm(
+      `Discard the calibration for ${this._name(a.calibrating)}?\n\n` +
+      `It goes back to uncorrected output, and measuring it again means ` +
+      `another pass with the sliders.`)) return;
+    this._hass.callService("light_calibration", "clear_profile",
+      { entry_id: a.entry_id });
+  }
+
+  async _toggleMeasurements(root) {
+    const box = root.querySelector(".measurements");
+    const button = root.querySelector(".dshow");
+    if (!box.hidden) {
+      box.hidden = true;
+      button.textContent = "Show measurements";
+      return;
+    }
+    button.disabled = true;
+    try {
+      const result = await this._hass.callWS({
+        type: "light_calibration/profile",
+        entry_id: this._detailsAttrs().entry_id,
+      });
+      box.innerHTML = renderPoints(result.points || []);
+      button.textContent = "Hide measurements";
+    } catch (err) {
+      box.textContent = `Could not read the profile: ${(err && err.message) || err}`;
+    }
+    box.hidden = false;
+    button.disabled = false;
+  }
+
+  // ------------------------------------------------------------------ details
+  _detailsAttrs() {
+    const st = this._detailsEntity && this._hass.states[this._detailsEntity];
+    return st ? st.attributes : null;
+  }
+
+  async _openDetails(entity) {
+    this._detailsEntity = entity;
+    const box = this._details.querySelector(".measurements");
+    box.hidden = true;
+    this._details.querySelector(".dshow").textContent = "Show measurements";
+    this._details.classList.add("open");
+    this._renderDetails();
+
+    const holder = this._details.querySelector(".dpick");
+    holder.replaceChildren();
+    const native = await this._pickerReady;
+    const a = this._detailsAttrs();
+    if (!a) return;
+    const exclude = [a.calibrating, (a.calibrating || "").replace(/_raw$/, "")];
+    const set = (value) => {
+      if (!value || value === this._detailsAttrs().reference_light) return;
+      this._hass.callService("light_calibration", "set_reference",
+        { entry_id: a.entry_id, entity_id: value });
+    };
     if (native) {
       const picker = document.createElement("ha-entity-picker");
       picker.hass = this._hass;
-      picker.label = "Reference light (the one that looks right)";
       picker.includeDomains = ["light"];
-      picker.excludeEntities = [a.calibrating, a.calibrating.replace(/_raw$/, "")];
+      picker.excludeEntities = exclude;
       picker.allowCustomEntity = false;
       picker.value = a.reference_light || "";
-      picker.addEventListener("value-changed", (ev) => setReference(ev.detail.value));
-      item.pickerSlot.replaceChildren(picker);
-      item.picker = picker;
+      picker.addEventListener("value-changed", (e) => set(e.detail.value));
+      holder.appendChild(picker);
       return;
     }
-
-    // Fallback if the picker could not be loaded.
-    const label = document.createElement("label");
-    label.textContent = "Reference light (the one that looks right)";
     const select = document.createElement("select");
-    select.addEventListener("change", (ev) => setReference(ev.target.value));
-    item.pickerSlot.replaceChildren(label, select);
-    item.picker = select;
-    item.isSelect = true;
+    select.innerHTML = Object.keys(this._hass.states)
+      .filter((e) => e.startsWith("light.") && !exclude.includes(e))
+      .sort()
+      .map((e) => `<option value="${e}"` +
+                  `${e === a.reference_light ? " selected" : ""}>` +
+                  `${this._name(e)}</option>`).join("");
+    select.addEventListener("change", (e) => set(e.target.value));
+    holder.appendChild(select);
+  }
+
+  _closeDetails() {
+    this._details.classList.remove("open");
+    this._detailsEntity = null;
+  }
+
+  _renderDetails() {
+    const a = this._detailsAttrs();
+    if (!a) {
+      this._closeDetails();
+      return;
+    }
+    const d = this._details;
+    const calibrated = a.stored_points > 0;
+    d.querySelector(".dname").textContent = this._name(a.calibrating);
+    d.querySelector(".did").textContent =
+      (a.calibrating || "").replace(/_raw$/, "");
+
+    const sw = this._hass.states[this._detailsEntity.replace(/^sensor\./, "switch.")];
+    const on = sw && sw.state === "on";
+    const toggle = d.querySelector(".dtoggle");
+    toggle.hidden = !calibrated;
+    toggle.textContent = on ? "Turn off" : "Turn on";
+    d.querySelector(".dstate").textContent = !calibrated
+      ? "Nothing measured yet"
+      : on ? "Applied" : "Off -- the light is running uncorrected";
+
+    // Hidden on the card once a light is calibrated, but still reachable here.
+    const sources = this._copySources(this._detailsEntity);
+    const copyBox = d.querySelector(".dcopy");
+    copyBox.hidden = sources.length === 0;
+    if (sources.length) this._fillCopyOptions(d.querySelector(".dcopyfrom"), sources);
+
+    d.querySelector(".dmeasure").hidden = !calibrated;
+    d.querySelector(".dclear").hidden = !calibrated;
   }
 
   _updateItem(entity, item) {
     const st = this._hass.states[entity];
     const a = st.attributes;
-    item.title.textContent = this._name(a.calibrating) || a.friendly_name || entity;
-    item.el.querySelector(".calibrate").textContent =
-      a.stored_points > 0 ? "Fine-tune" : "Start calibration";
-    // The id worth showing is the one everything else points at -- the calibrated
-    // light -- not the renamed fixture hiding behind it.
-    const drives = (a.calibrating || "").replace(/_raw$/, "");
-    item.meta.innerHTML = `${st.state} &middot; <code>${drives}</code>`;
+    const calibrated = a.stored_points > 0;
+    const sw = this._hass.states[entity.replace(/^sensor\./, "switch.")];
+    const on = sw && sw.state === "on";
 
-    // Nothing to discard before there is a profile, and offering it next to
-    // Calibrate just invites a mis-click.
-    item.clear.hidden = !(a.stored_points > 0);
-    item.show.hidden = !(a.stored_points > 0);
-    if (item.show.hidden) {
-      item.measurements.hidden = true;
-      item.show.textContent = "Show measurements";
+    item.title.textContent = this._name(a.calibrating) || entity;
+    item.calibrate.textContent = calibrated ? "Fine-tune" : "Calibrate";
+
+    if (a.active) {
+      item.dot.className = "dot busy";
+      item.meta.textContent = st.state;
+    } else if (!calibrated) {
+      item.dot.className = "dot";
+      item.meta.textContent = "Not calibrated";
+    } else if (on) {
+      item.dot.className = "dot on";
+      item.meta.textContent = a.profile_summary;
+    } else {
+      item.dot.className = "dot off";
+      item.meta.innerHTML =
+        `${a.profile_summary} &middot; <span class="flag">correction off</span>`;
     }
 
-    // One direction: into the light whose card you are on. The sidebar lists
-    // every calibrated light, so getting to the one you want to change is the
-    // easy part -- a second control for the other direction was just two ways
-    // to say the same thing.
-    const sources = calibrationSensors(this._hass).filter(
-      (e) => e !== entity && this._hass.states[e].attributes.stored_points > 0
-    );
+    // Only on a light that has nothing to lose; otherwise it lives in Details.
+    const sources = calibrated ? [] : this._copySources(entity);
     item.copyRow.hidden = sources.length === 0;
-
     const key = sources.map(
       (e) => e + ":" + this._hass.states[e].attributes.stored_points).join(",");
     if (sources.length && item.copyKey !== key) {
       item.copyKey = key;
-      item.copy.innerHTML =
-        `<option value="">Choose a light...</option>` +
-        sources.map((e) => {
-          const sa = this._hass.states[e].attributes;
-          return `<option value="${e}">${this._name(sa.calibrating)} - ` +
-                 `${sa.profile_summary || sa.stored_points + " points"}</option>`;
-        }).join("");
-    }
-
-    const sw = this._hass.states[item.switchId];
-    if (sw && sw.state !== "unavailable") {
-      item.toggle.hidden = false;
-      item.toggle.textContent =
-        sw.state === "on" ? "Calibration on - tap to compare" : "Calibration OFF - showing raw";
-    } else {
-      item.toggle.hidden = true;
-    }
-
-    if (!item.picker) return;
-    if (item.isSelect) {
-      const lights = Object.keys(this._hass.states).filter((e) => e.startsWith("light.")).sort();
-      if (item.picker.options.length !== lights.length) {
-        item.picker.replaceChildren(...lights.map((l) => {
-          const o = document.createElement("option");
-          o.value = l;
-          o.textContent = this._hass.states[l].attributes.friendly_name || l;
-          return o;
-        }));
-      }
-      item.picker.value = a.reference_light || "";
-    } else {
-      item.picker.hass = this._hass;
-      if (document.activeElement !== item.picker) {
-        item.picker.value = a.reference_light || "";
-      }
+      this._fillCopyOptions(item.copy, sources);
     }
   }
 }
