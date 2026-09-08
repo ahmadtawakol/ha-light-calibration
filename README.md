@@ -188,3 +188,8 @@ uv run --with pytest pytest tests/
 - The frontend URL contains a hash of the file's contents. Home Assistant is
   often behind a CDN that caches `.js` for hours, and a stale module shows up as
   a blank panel. A content-addressed URL cannot go stale.
+- **Reload the page after updating.** Home Assistant's frontend is a single page
+  app, so restarting it does not reload your browser tab, and a custom element
+  name cannot be redefined once a page has claimed it. A tab left open across an
+  update keeps rendering the old interface — which looks exactly like an update
+  that did nothing. The console says so if it happens.

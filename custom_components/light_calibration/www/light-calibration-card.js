@@ -960,7 +960,22 @@ class LightCalibrationCard extends HTMLElement {
 }
 
 /* Loaded on every HA page, so never throw if it somehow runs twice. */
-if (!customElements.get("light-calibration-dialog")) {
+if (customElements.get("light-calibration-dialog")) {
+  /* A different build already claimed these names in this page, and a custom
+     element name cannot be redefined -- so everything above is inert and the
+     page will keep rendering whichever build got here first.
+
+     Content-addressing the module URL stops a stale file being *fetched*; it
+     cannot help once a page has registered an older one, and Home Assistant's
+     frontend is a single page app that survives a restart. Updating without
+     reloading the tab therefore leaves the old interface in place, looking
+     exactly like an update that did not work. Say so instead of going quiet. */
+  console.warn(
+    "%c LIGHT-CALIBRATION ", "background:#e65100;color:#fff",
+    "another build of this panel is already loaded in this page, so this one " +
+    "is doing nothing. Reload the page to pick up the new version."
+  );
+} else {
   customElements.define("light-calibration-dialog", LightCalibrationDialog);
   customElements.define("light-calibration-panel", LightCalibrationPanel);
   customElements.define("light-calibration-card", LightCalibrationCard);
