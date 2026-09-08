@@ -480,6 +480,82 @@ function calibrationSensors(hass) {
 
 /* ------------------------------------------------------------------- panel */
 
+/* Inlined because ha-icon belongs to the Home Assistant bundle and a custom
+   panel cannot import it. Paths are from @mdi/js 7.4.47 -- the exact version
+   home-assistant/frontend pins -- so these are the same glyphs HA draws. */
+const ICONS = {
+  bulb: "M12,2A7,7 0 0,0 5,9C5,11.38 6.19,13.47 8,14.74V17A1,1 0 0,0 9,18H15A1," +
+        "1 0 0,0 16,17V14.74C17.81,13.47 19,11.38 19,9A7,7 0 0,0 12,2M9,21A1,1 " +
+        "0 0,0 10,22H14A1,1 0 0,0 15,21V20H9V21Z",
+  bulbOff: "M12,2C9.76,2 7.78,3.05 6.5,4.68L16.31,14.5C17.94,13.21 19,11.24 19," +
+           "9A7,7 0 0,0 12,2M3.28,4L2,5.27L5.04,8.3C5,8.53 5,8.76 5,9C5,11.38 " +
+           "6.19,13.47 8,14.74V17A1,1 0 0,0 9,18H14.73L18.73,22L20,20.72L3.28," +
+           "4M9,20V21A1,1 0 0,0 10,22H14A1,1 0 0,0 15,21V20H9Z",
+  eyedropper: "M6.92,19L5,17.08L13.06,9L15,10.94M20.71,5.63L18.37,3.29C18,2.9 " +
+              "17.35,2.9 16.96,3.29L13.84,6.41L11.91,4.5L10.5,5.91L11.92,7.33L3," +
+              "16.25V21H7.75L16.67,12.08L18.09,13.5L19.5,12.09L17.58,10.17L20.7," +
+              "7.05C21.1,6.65 21.1,6 20.71,5.63Z",
+};
+
+/* Home Assistant's own conversions. The value channel is the raw maximum on a
+   0..255 scale and is never normalised -- reimplementing this with a 0..1 value
+   drives near-white lights to black, which is the easy way to get it wrong. */
+function rgb2hsv([r, g, b]) {
+  const v = Math.max(r, g, b);
+  const c = v - Math.min(r, g, b);
+  const h = c && (v === r ? (g - b) / c : v === g ? 2 + (b - r) / c : 4 + (r - g) / c);
+  return [60 * (h < 0 ? h + 6 : h), v && c / v, v];
+}
+
+function hsv2rgb([h, s, v]) {
+  const f = (n) => {
+    const k = (n + h / 60) % 6;
+    return v - v * s * Math.max(Math.min(k, 4 - k, 1), 0);
+  };
+  return [f(5), f(3), f(1)];
+}
+
+/* What colour a tile card gives a light's icon, ported from hui-tile-card's
+   _computeStateColor. It floors *saturation*, not brightness: a light's
+   rgb_color is its colour, not its level, so nothing needs lifting for being
+   dim -- but a near-white one would be an invisible white icon on a white card,
+   so it is either pushed to a minimum saturation or, if it is essentially pure
+   white, dimmed instead. */
+function lightColor(light) {
+  const rgb = light.attributes.rgb_color;
+  if (!rgb) return null;
+  const hsv = rgb2hsv(rgb);
+  if (hsv[1] < 0.4) {
+    if (hsv[1] < 0.1) hsv[2] = 225;
+    else hsv[1] = 0.4;
+  }
+  const [r, g, b] = hsv2rgb(hsv).map((c) => Math.round(c));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/* One colour at two alphas -- the badge tint is the icon colour at 0.2, the way
+   ha-tile-icon does it, rather than a separately chosen pale shade. */
+function lightTint(light) {
+  if (!light || light.state === "unavailable") {
+    return { color: "var(--state-unavailable-color, #bdbdbd)", lit: false };
+  }
+  if (light.state !== "on") {
+    return { color: "var(--state-inactive-color, #9e9e9e)", lit: false };
+  }
+  return {
+    color: lightColor(light) || "var(--state-light-active-color, #ffc107)",
+    lit: true,
+  };
+}
+
+/* What the light is doing, in the words its own card would use. */
+function describeLight(light) {
+  const a = light.attributes;
+  const pct = a.brightness != null
+    ? `${Math.max(1, Math.round((a.brightness / 255) * 100))}%` : null;
+  return ["On", pct].filter(Boolean).join(" \u00b7 ");
+}
+
 const HUE_NAMES = { 0: "red", 60: "yellow", 120: "green",
                     180: "cyan", 240: "blue", 300: "magenta" };
 
@@ -534,6 +610,21 @@ const PANEL_STYLE = `
   }
   .head .back:hover { background: rgba(255,255,255,0.12); }
   .head .back svg { width: 24px; height: 24px; fill: currentColor; }
+  .head .grow { flex: 1; }
+  /* The one thing you come here to do that is not about a light already on the
+     page, so it lives in the chrome rather than at the bottom of the list. */
+  .head .headadd {
+    background: rgba(255,255,255,0.16); border: none; color: inherit;
+    font: inherit; font-size: 0.9rem; cursor: pointer; border-radius: 20px;
+    padding: 7px 14px 7px 10px; display: flex; align-items: center; gap: 6px;
+    flex: 0 0 auto;
+  }
+  .head .headadd:hover { background: rgba(255,255,255,0.28); }
+  .head .headadd svg { width: 18px; height: 18px; fill: currentColor; }
+  @media (max-width: 480px) {
+    .head .headadd span { display: none; }
+    .head .headadd { padding: 8px; border-radius: 50%; }
+  }
   .body { padding: 24px; max-width: 1040px; margin: 0 auto; }
   .grid {
     display: grid; gap: 14px;
@@ -546,28 +637,71 @@ const PANEL_STYLE = `
     padding: 16px; color: var(--primary-text-color);
     display: flex; flex-direction: column;
   }
-  .item .top { display: flex; align-items: flex-start; gap: 9px; }
-  /* Whether a light is corrected right now, before reading a word of it. */
-  .dot {
-    flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px;
-    background: var(--divider-color, #ccc);
-    box-shadow: 0 0 0 3px transparent;
+  /* Measured against home-assistant/frontend: ha-tile-icon, ha-tile-info,
+     ha-tile-container and ha-control-switch. Pixel values are hardcoded with
+     the newer design tokens as fallbacks, since the tokens do not exist on
+     older cores but the resolved values have not moved. */
+  .item { padding: 0; gap: 0; }
+  .tile {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    min-height: 56px; padding: 0 10px; background: none; border: none;
+    cursor: pointer; font: inherit; color: inherit; text-align: left;
   }
-  .dot.on     { background: var(--success-color, #43a047); }
-  .dot.off    { background: var(--warning-color, #ffa726); }
-  .dot.busy   { background: var(--primary-color); }
-  .item h3 {
-    margin: 0; font-size: 1rem; font-weight: 500; line-height: 1.35;
-    overflow-wrap: anywhere;
+  .badge {
+    flex: 0 0 auto; position: relative; width: 36px; height: 36px;
+    border-radius: var(--ha-border-radius-pill, 9999px);
+    display: grid; place-items: center; overflow: hidden;
+    transition: transform 180ms ease-in-out, color 180ms ease-in-out;
   }
-  .meta { color: var(--secondary-text-color); font-size: 0.85rem; margin-top: 2px; }
-  .meta .flag { color: var(--warning-color, #ffa726); }
-  /* Pushed to the bottom so the actions line up across the row however much
-     status text a card happens to carry. */
-  .item .row { display: flex; gap: 4px; align-items: center;
-               margin-top: auto; padding-top: 14px; }
-  .item .row .spacer { flex: 1; }
-  .item .row button { padding: 7px 11px; font-size: 0.88rem; }
+  /* The tint is the icon's own colour at 0.2, not a separately picked shade. */
+  .badge::before {
+    content: ""; position: absolute; inset: 0; border-radius: inherit;
+    background-color: currentColor; opacity: 0.2; transition: opacity 180ms;
+  }
+  .tile:hover .badge::before { opacity: 0.35; }
+  .tile:active .badge { transform: scale(1.2); }
+  .badge svg { width: 24px; height: 24px; fill: currentColor; position: relative; }
+  .text { min-width: 0; display: flex; flex-direction: column;
+          align-items: flex-start; justify-content: center; }
+  .name {
+    font-size: 14px; font-weight: 500; line-height: 1.6; letter-spacing: 0.1px;
+    color: var(--primary-text-color);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
+  }
+  .state {
+    font-size: 12px; font-weight: 400; line-height: 1.2; letter-spacing: 0.4px;
+    color: var(--primary-text-color); opacity: 0.75;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
+  }
+  .state.warn { color: var(--warning-color, #ffa726); opacity: 1; }
+  .feature { padding: 0 12px 12px; }
+  .feature > * { width: 100%; height: 42px;
+                 border-radius: var(--ha-border-radius-lg, 12px); }
+  .feature > *[hidden] { display: none; }
+  /* ha-control-switch: a full-width track with a half-width sliding thumb, both
+     in the entity's own colour -- the track at 0.2, the thumb solid. It is not
+     a grey-versus-blue switch; position carries the state, not hue. */
+  .switch {
+    position: relative; display: flex; padding: 0; border: none;
+    cursor: pointer; overflow: hidden; background: none;
+    transition: box-shadow 180ms ease-in-out;
+  }
+  .switch .track {
+    position: absolute; inset: 0; border-radius: inherit;
+    background-color: currentColor; opacity: 0.2;
+    transition: opacity 180ms ease-in-out;
+  }
+  .switch:hover .track { opacity: 0.4; }
+  .switch .thumb {
+    position: relative; width: 50%; height: 100%; border-radius: inherit;
+    background-color: currentColor;
+    display: grid; place-items: center;
+    transition: transform 180ms ease-in-out;
+  }
+  .switch.on .thumb { transform: translateX(100%); }
+  /* Fixed white rather than currentColor: currentColor here is the thumb's own
+     background, so inheriting it would paint the icon invisible. */
+  .switch .thumb svg { width: 20px; height: 20px; fill: #fff; }
   .copy { margin-top: 12px; }
   .copy[hidden] { display: none; }
   label.tiny { display: block; font-size: 0.78rem; margin-bottom: 3px;
@@ -702,7 +836,11 @@ class LightCalibrationPanel extends HTMLElement {
         <button class="back" title="Back" aria-label="Back">
           <svg viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20v-2z"/></svg>
         </button>
-        <span>Light Calibration</span>
+        <span class="grow">Light Calibration</span>
+        <button class="headadd" data-add>
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          <span>Calibrate a light</span>
+        </button>
       </div>
       <div class="body" id="body"></div>`;
     const adder = document.createElement("div");
@@ -745,7 +883,8 @@ class LightCalibrationPanel extends HTMLElement {
         </div>
         <div class="actions">
           <button class="flat danger left dclear">Clear profile</button>
-          <button class="primary dclose">Close</button>
+          <button class="flat dclose">Close</button>
+          <button class="primary dcal"></button>
         </div>
       </div>`;
     this._details = details;
@@ -754,6 +893,12 @@ class LightCalibrationPanel extends HTMLElement {
     });
     details.querySelector(".dclose").addEventListener(
       "click", () => this._closeDetails());
+    details.querySelector(".dcal").addEventListener("click", () => {
+      const entity = this._detailsEntity;
+      this._closeDetails();
+      this._dialog.hass = this._hass;
+      this._dialog.open(entity);
+    });
     details.querySelector(".dtoggle").addEventListener("click", () => {
       const a = this._detailsAttrs();
       if (a) this._hass.callService("switch", "toggle",
@@ -782,7 +927,7 @@ class LightCalibrationPanel extends HTMLElement {
     this._pickerReady = loadEntityPicker();
     // The add buttons are written into .body as markup whenever the list is
     // rebuilt, so the click is caught here rather than re-bound each time.
-    this._body.addEventListener("click", (e) => {
+    this.shadowRoot.addEventListener("click", (e) => {
       if (e.target.closest("[data-add]")) this._openAdd();
     });
     this._built = true;
@@ -844,10 +989,7 @@ class LightCalibrationPanel extends HTMLElement {
         grid.appendChild(item.el);
       }
       this._body.appendChild(grid);
-      const add = document.createElement("div");
-      add.className = "add";
-      add.innerHTML = `<button class="flat" data-add>+ Calibrate another light</button>`;
-      this._body.appendChild(add);
+
     }
     for (const [entity, item] of this._items) this._updateItem(entity, item);
     if (this._details.classList.contains("open")) this._renderDetails();
@@ -1038,6 +1180,15 @@ class LightCalibrationPanel extends HTMLElement {
     }
   }
 
+  /* The calibrated light itself -- the entity that took over the original id.
+     The card shows its real state, so this is what everything visual keys off. */
+  _lightOf(sensorEntity) {
+    const a = this._hass.states[sensorEntity];
+    if (!a) return null;
+    const id = (a.attributes.calibrating || "").replace(/_raw$/, "");
+    return id ? this._hass.states[id] : null;
+  }
+
   /* Entity ids are for automations, not for people. */
   _name(entityId) {
     if (!entityId) return "";
@@ -1046,47 +1197,49 @@ class LightCalibrationPanel extends HTMLElement {
     return entityId.replace(/^[^.]+\./, "").replace(/_raw$/, "").replace(/_/g, " ");
   }
 
-  /* A card is a glance: which light, whether it is corrected right now, and how
-     much was measured. Everything you might change lives behind Details, so the
-     grid stays readable when there are eight of these. */
+  /* Shaped like a Home Assistant tile card, because that is what the rest of
+     the interface a user came from looks like: a coloured icon badge carrying
+     the light's real state, the name, a line of status, and one feature row.
+     Everything you might change is behind the card, in Details. */
   _buildItem(entity) {
     const el = document.createElement("div");
     el.className = "item";
     el.innerHTML = `
-      <div class="top">
-        <span class="dot"></span>
-        <div>
-          <h3></h3>
-          <div class="meta"></div>
-        </div>
-      </div>
-      <div class="copy" hidden>
-        <label class="tiny">Copy calibration from</label>
-        <select class="copyfrom"></select>
-      </div>
-      <div class="row">
-        <button class="primary calibrate"></button>
-        <div class="spacer"></div>
-        <button class="flat details">Details</button>
+      <button class="tile" type="button">
+        <span class="badge"><svg viewBox="0 0 24 24"><path/></svg></span>
+        <span class="text">
+          <span class="name"></span>
+          <span class="state"></span>
+        </span>
+      </button>
+      <div class="feature">
+        <button class="primary act"></button>
+        <button class="switch" role="switch" aria-label="Calibration">
+          <span class="track"></span>
+          <span class="thumb"><svg viewBox="0 0 24 24"><path/></svg></span>
+        </button>
       </div>`;
 
-    el.querySelector(".calibrate").addEventListener("click", () => {
+    el.querySelector(".tile").addEventListener(
+      "click", () => this._openDetails(entity));
+    el.querySelector(".act").addEventListener("click", () => {
       this._dialog.hass = this._hass;
       this._dialog.open(entity);
     });
-    el.querySelector(".details").addEventListener(
-      "click", () => this._openDetails(entity));
-    const copy = el.querySelector(".copyfrom");
-    copy.addEventListener("change", () => this._copyFrom(entity, copy));
+    el.querySelector(".switch").addEventListener("click", () => {
+      this._hass.callService("switch", "toggle",
+        { entity_id: entity.replace(/^sensor\./, "switch.") });
+    });
 
     return {
       el,
-      dot: el.querySelector(".dot"),
-      title: el.querySelector("h3"),
-      meta: el.querySelector(".meta"),
-      calibrate: el.querySelector(".calibrate"),
-      copyRow: el.querySelector(".copy"),
-      copy,
+      icon: el.querySelector(".badge path"),
+      badge: el.querySelector(".badge"),
+      name: el.querySelector(".name"),
+      state: el.querySelector(".state"),
+      act: el.querySelector(".act"),
+      sw: el.querySelector(".switch"),
+      swIcon: el.querySelector(".thumb path"),
     };
   }
 
@@ -1244,43 +1397,51 @@ class LightCalibrationPanel extends HTMLElement {
 
     d.querySelector(".dmeasure").hidden = !calibrated;
     d.querySelector(".dclear").hidden = !calibrated;
+    d.querySelector(".dcal").textContent = calibrated ? "Fine-tune" : "Calibrate";
   }
 
   _updateItem(entity, item) {
     const st = this._hass.states[entity];
     const a = st.attributes;
     const calibrated = a.stored_points > 0;
+    const light = this._lightOf(entity);
     const sw = this._hass.states[entity.replace(/^sensor\./, "switch.")];
     const on = sw && sw.state === "on";
 
-    item.title.textContent = this._name(a.calibrating) || entity;
-    item.calibrate.textContent = calibrated ? "Fine-tune" : "Calibrate";
+    item.name.textContent = this._name(a.calibrating) || entity;
 
-    if (a.active) {
-      item.dot.className = "dot busy";
-      item.meta.textContent = st.state;
-    } else if (!calibrated) {
-      item.dot.className = "dot";
-      item.meta.textContent = "Not calibrated";
-    } else if (on) {
-      item.dot.className = "dot on";
-      item.meta.textContent = a.profile_summary;
-    } else {
-      item.dot.className = "dot off";
-      item.meta.innerHTML =
-        `${a.profile_summary} &middot; <span class="flag">correction off</span>`;
-    }
+    const tint = lightTint(light);
+    item.badge.style.color = tint.color;
+    item.icon.setAttribute("d", tint.lit ? ICONS.bulb : ICONS.bulbOff);
+    // The switch wears the light's colour in both states, as a tile feature
+    // does -- the thumb's position is what says on or off.
+    item.sw.style.color = tint.color;
+    item.swIcon.setAttribute("d", ICONS.eyedropper);
 
-    // Only on a light that has nothing to lose; otherwise it lives in Details.
-    const sources = calibrated ? [] : this._copySources(entity);
-    item.copyRow.hidden = sources.length === 0;
-    const key = sources.map(
-      (e) => e + ":" + this._hass.states[e].attributes.stored_points).join(",");
-    if (sources.length && item.copyKey !== key) {
-      item.copyKey = key;
-      this._fillCopyOptions(item.copy, sources);
-    }
+    // A tile card's second line is the light's state, and that is what this
+    // shows. The calibration only gets a word when something is worth saying --
+    // a run in progress, nothing measured, or a profile sitting switched off.
+    // How much was measured is a Details question, not a glance question.
+    const lightState = !light || light.state === "unavailable"
+      ? "Unavailable"
+      : light.state === "on" ? describeLight(light) : "Off";
+    const note = a.active ? st.state
+      : !calibrated ? "not calibrated"
+      : !on ? "correction off"
+      : null;
+    item.state.textContent = note ? `${lightState} \u00b7 ${note}` : lightState;
+    item.state.classList.toggle("warn", calibrated && !on && !a.active);
+
+    // A toggle needs something to toggle. Until a light has been measured the
+    // useful action is measuring it.
+    item.act.hidden = calibrated;
+    item.sw.hidden = !calibrated;
+    item.act.textContent = "Calibrate";
+    item.sw.setAttribute("aria-checked", on ? "true" : "false");
+    item.sw.title = on ? "Calibration on" : "Calibration off";
+    item.sw.classList.toggle("on", !!on);
   }
+
 }
 
 /* -------------------------------------------------------------------- card */

@@ -147,15 +147,16 @@ five whites without disturbing a Thorough profile.
 HACS → ⋮ → Custom repositories → this repo URL, category **Integration**.
 Download and restart Home Assistant.
 
-**Light Calibration** then appears in the sidebar, listing every calibrated
-light as a card: its name, whether the correction is being applied right now,
-and how much was measured. Press **Calibrate a light**, pick the light that
-looks wrong and one you trust to match it against, and the calibration starts
+**Light Calibration** then appears in the sidebar. **Calibrate a light** in the
+header asks which light looks wrong and which one it should match, then starts
 immediately — no trip through Settings.
 
-Each card carries the one action you want most — **Calibrate**, or **Fine-tune**
-once there is a profile. **Details** holds the rest: the reference light, the
-measurements, the on/off switch, and clearing the profile.
+Each calibrated light gets a tile, shaped like Home Assistant's own: the icon
+carries the light's current colour and state, and underneath is a switch for
+the correction itself, so you can flip between corrected and raw output without
+opening anything. A light with nothing measured yet shows **Calibrate** there
+instead. Tapping a tile opens **Details** — the reference light, the
+measurements, fine-tuning, and clearing the profile.
 
 Adding one through **Settings → Devices & Services → Add integration** still
 works and does the same thing. The entry's **Configure** button reopens the
