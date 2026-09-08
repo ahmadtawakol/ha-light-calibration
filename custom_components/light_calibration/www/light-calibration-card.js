@@ -500,6 +500,7 @@ const ICONS = {
   close: "M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12," +
          "13.41L17.59,19L19,17.59L13.41,12L19,6.41Z",
   // Material's own filter-chip checkmark, on an 18x18 viewBox rather than 24.
+  plus: "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z",
   tick: "M6.75012 12.1274L3.62262 8.99988L2.55762 10.0574L6.75012 14.2499L15" +
         ".7501 5.24988L14.6926 4.19238L6.75012 12.1274Z",
   eyedropper: "M6.92,19L5,17.08L13.06,9L15,10.94M20.71,5.63L18.37,3.29C18,2.9 " +
@@ -507,6 +508,22 @@ const ICONS = {
               "16.25V21H7.75L16.67,12.08L18.09,13.5L19.5,12.09L17.58,10.17L20.7," +
               "7.05C21.1,6.65 21.1,6 20.71,5.63Z",
 };
+
+/* Mirrors capability.is_calibratable on the Python side: either a real colour
+   mode, or colour temperature on its own. An on/off or brightness-only fixture
+   has no colour behaviour to correct, so listing it only invites a rejection.
+
+   A light reporting no modes at all is kept. That is what an unavailable entity
+   looks like -- its attributes are stripped -- and hiding every light that
+   happens to be offline would be worse than showing one that cannot be
+   calibrated. */
+const OFF_CURVE_MODES = new Set(["rgb", "rgbw", "rgbww", "hs", "xy"]);
+
+function isCalibratable(light) {
+  const modes = (light && light.attributes.supported_color_modes) || [];
+  if (!modes.length) return true;
+  return modes.some((m) => OFF_CURVE_MODES.has(m)) || modes.includes("color_temp");
+}
 
 /* Home Assistant's own conversions. The value channel is the raw maximum on a
    0..255 scale and is never normalised -- reimplementing this with a 0..1 value
@@ -635,7 +652,7 @@ const PANEL_STYLE = `
      8px radius. The 2026 --ha-* tokens carry a fallback each, since a var()
      that resolves to nothing takes the whole declaration with it. */
   .toolbar {
-    max-width: 1040px; margin: 0 auto; padding: 12px 16px;
+    padding: 12px 16px;
     display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
   }
   .search {
@@ -693,14 +710,34 @@ const PANEL_STYLE = `
     padding-inline-start: 8px;
   }
   .chip.on .tick { display: block; }
-  .toolbar .addbtn { flex: 0 0 auto; }
-  @media (max-width: 700px) {
-    .toolbar { padding: 12px 16px 0; }
-    .search { flex-basis: 100%; }
-    .chips { flex: 1; }
-    .toolbar .addbtn { flex: 0 0 auto; }
+  /* Extended FAB, bottom right, the way every Home Assistant config page puts
+     its primary action. Keeping it out of the toolbar also leaves exactly one
+     filled accent control on the page. */
+  .fab {
+    position: fixed; right: 16px; z-index: 5;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    height: 56px; padding: 0 20px; border: none; border-radius: 28px;
+    background: var(--primary-color); color: var(--text-primary-color, #fff);
+    font: inherit; font-size: 0.95rem; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 3px 5px -1px rgba(0,0,0,0.2), 0 6px 10px rgba(0,0,0,0.14),
+                0 1px 18px rgba(0,0,0,0.12);
+    transition: box-shadow 180ms ease-in-out;
   }
-  .body { padding: 24px; max-width: 1040px; margin: 0 auto; }
+  .fab:hover {
+    box-shadow: 0 5px 5px -3px rgba(0,0,0,0.2), 0 8px 10px 1px rgba(0,0,0,0.14),
+                0 3px 14px 2px rgba(0,0,0,0.12);
+  }
+  .fab svg { width: 24px; height: 24px; fill: currentColor; }
+  /* The grid has to end above the FAB or the last row hides behind it. */
+  .body { padding-bottom: 88px; }
+  @media (max-width: 700px) {
+    .search { flex-basis: 100%; }
+    /* Collapses to a circle, as HA's does on narrow screens. */
+    .fab span { display: none; }
+    .fab { padding: 0; width: 56px; justify-content: center; }
+  }
+  .body { padding: 0 16px 24px; }
   .grid {
     display: grid; gap: 14px;
     grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
@@ -765,6 +802,17 @@ const PANEL_STYLE = `
     height: 42px; border-radius: var(--ha-border-radius-lg, 12px);
   }
   .feature .act, .feature .switch { flex: 1; min-width: 0; }
+  /* Tonal, not solid. A screenful of cards each carrying a filled accent button
+     is a wall of blue; the one solid button on the page belongs in the toolbar,
+     where it is the single call to action. */
+  .feature .act.primary {
+    background: var(--ha-color-fill-primary-normal-hover,
+                    color-mix(in srgb, var(--primary-color) 16%, transparent));
+    color: var(--primary-color);
+  }
+  .feature .act.primary:hover {
+    background: color-mix(in srgb, var(--primary-color) 26%, transparent);
+  }
   /* Out-specifies .feature .details, which sets display:grid -- otherwise a
      hidden button keeps its display and renders anyway. */
   .item .feature > *[hidden] { display: none; }
@@ -970,9 +1018,12 @@ class LightCalibrationPanel extends HTMLElement {
             <span>All lights</span>
           </button>
         </div>
-        <button class="primary addbtn" data-add>Calibrate a light</button>
       </div>
-      <div class="body" id="body"></div>`;
+      <div class="body" id="body"></div>
+      <button class="fab" data-add>
+        <svg viewBox="0 0 24 24"><path d="${ICONS.plus}"/></svg>
+        <span>Calibrate a light</span>
+      </button>`;
     const adder = document.createElement("div");
     adder.className = "scrim add-scrim";
     adder.innerHTML = `
@@ -1118,7 +1169,8 @@ class LightCalibrationPanel extends HTMLElement {
       // Every light except the displaced fixtures, which are the uncorrected
       // half of a light already on the page.
       ids = Object.keys(this._hass.states).filter(
-        (e) => e.startsWith("light.") && !displaced.has(e));
+        (e) => e.startsWith("light.") && !displaced.has(e) &&
+               isCalibratable(this._hass.states[e]));
     }
 
     // Arrived from an entry's Configure button: show just that light.
@@ -1131,14 +1183,18 @@ class LightCalibrationPanel extends HTMLElement {
       if (only.length) ids = only;
     }
 
+    const total = ids.length;
     if (this._query) {
       ids = ids.filter(
         (id) => `${this._name(id)} ${id}`.toLowerCase().includes(this._query));
     }
 
-    return ids
+    const rows = ids
       .map((light) => ({ light, sensor: byLight.get(light) || null }))
       .sort((x, y) => this._name(x.light).localeCompare(this._name(y.light)));
+    // `total` is the scope before the search narrows it -- what the placeholder
+    // is offering to search through, which is not the same as what is on screen.
+    return { rows, total };
   }
 
   _emptyMarkup() {
@@ -1163,10 +1219,7 @@ class LightCalibrationPanel extends HTMLElement {
   }
 
   _render() {
-    const rows = this._rows();
-    const total = this._scope === "all"
-      ? Object.keys(this._hass.states).filter((e) => e.startsWith("light.")).length
-      : calibrationSensors(this._hass).length;
+    const { rows, total } = this._rows();
     this._search.placeholder =
       `Search ${total} light${total === 1 ? "" : "s"}`;
     // The sensor is part of the key: a light gaining or losing a calibration

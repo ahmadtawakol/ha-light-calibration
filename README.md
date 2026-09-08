@@ -147,14 +147,16 @@ five whites without disturbing a Thorough profile.
 HACS → ⋮ → Custom repositories → this repo URL, category **Integration**.
 Download and restart Home Assistant.
 
-**Light Calibration** then appears in the sidebar, with a toolbar across the
-top: a search box, a **Calibrated / All lights** switch, and **Calibrate a
-light**.
+**Light Calibration** then appears in the sidebar, with a search box and a
+**Calibrated / All lights** switch across the top and **Calibrate a light** in
+the bottom corner.
 
 It opens on the lights it has already calibrated. Switch to **All lights** and
-every light in Home Assistant appears — press **Calibrate** on any of them and
-it goes straight to asking what it should match, since you have already said
-which light. No trip through Settings, and nothing to add first.
+every light that *could* be calibrated appears — anything with colour or a
+tunable white; a plain on/off or brightness-only fixture has no colour
+behaviour to correct and is left out. Press **Calibrate** on any of them and it
+goes straight to asking what it should match, since you have already said which
+light. No trip through Settings, and nothing to add first.
 
 Each calibrated light gets a tile, shaped like Home Assistant's own: the icon
 carries the light's current colour and state, and tapping it opens that light's
