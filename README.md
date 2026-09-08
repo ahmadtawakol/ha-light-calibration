@@ -152,8 +152,8 @@ calibration starts immediately — no trip through Settings. Everything after
 that happens on the same page.
 
 Adding one through **Settings → Devices & Services → Add integration** still
-works and does the same thing. Either way, the entry's **Configure** button
-reopens the panel scoped to that one light.
+works and does the same thing. The entry's **Configure** button reopens the
+panel scoped to that one light.
 
 **Light Calibration** appears in the sidebar, listing every calibrated light.
 The entry's **Configure** button opens the same page scoped to that one light.

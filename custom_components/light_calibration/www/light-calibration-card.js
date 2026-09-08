@@ -480,10 +480,6 @@ function calibrationSensors(hass) {
 
 /* ------------------------------------------------------------------- panel */
 
-/* Settings -> Devices & services -> Add integration, scoped to this domain.
-   The fallback if driving the flow ourselves does not work out. */
-const ADD_URL = "/config/integrations/dashboard/add?domain=light_calibration";
-
 const HUE_NAMES = { 0: "red", 60: "yellow", 120: "green",
                     180: "cyan", 240: "blue", 300: "magenta" };
 
@@ -598,11 +594,6 @@ const PANEL_STYLE = `
   .scrim .err[hidden] { display: none; }
   .scrim .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
   .scrim .actions .left { margin-right: auto; }
-  /* If driving the flow from here ever fails, Home Assistant's own route still
-     works and is one click away rather than a hunt. */
-  .scrim .escape { color: var(--secondary-text-color); font-size: 0.85rem;
-                   text-decoration: none; align-self: center; }
-  .scrim .escape:hover { text-decoration: underline; }
   .add { display: flex; justify-content: center; margin: 4px 0 24px; }
   .add button { font-size: 0.95rem; }
   .add a {
@@ -695,8 +686,7 @@ class LightCalibrationPanel extends HTMLElement {
         </div>
         <div class="err" hidden></div>
         <div class="actions">
-          <a class="escape left" href="${ADD_URL}">Add from Settings instead</a>
-          <button class="flat quiet" data-act="cancel">Cancel</button>
+          <button class="flat quiet left" data-act="cancel">Cancel</button>
           <button class="primary" data-act="go">Start calibrating</button>
         </div>
       </div>`;
@@ -803,6 +793,10 @@ class LightCalibrationPanel extends HTMLElement {
      to Settings, through a flow dialog, and back again to start calibrating. */
   async _openAdd() {
     this._setAddError("");
+    // Everything that makes the dialog stateful is reset here, in one place:
+    // the submit button is disabled while a flow is in flight and the success
+    // path leaves through an early return, so it has to be revived somewhere.
+    this._adder.querySelector('[data-act="go"]').disabled = false;
     this._adder.classList.add("open");
     const native = await this._pickerReady;
     const skip = new Set();
@@ -812,10 +806,11 @@ class LightCalibrationPanel extends HTMLElement {
     }
     for (const slot of ["target", "reference"]) {
       const holder = this._adder.querySelector(`.pick.${slot}`);
-      if (holder.firstChild) {
-        if (holder.firstChild.hass) holder.firstChild.hass = this._hass;
-        continue;
-      }
+      // Built fresh every time the dialog opens. A picker kept around still
+      // holds the previous answer -- so calibrating one light and reaching for
+      // the next offered that same light back, already filled in -- and its
+      // exclusions go stale the moment anything is calibrated.
+      holder.replaceChildren();
       if (native) {
         const picker = document.createElement("ha-entity-picker");
         picker.hass = this._hass;
