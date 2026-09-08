@@ -16,6 +16,17 @@ directly — **never a copy**. Edit the component, reload the page, see the chan
 A copy would go stale the first time somebody forgot to sync it, which is the
 same class of bug the content-addressed frontend URL exists to prevent.
 
+For the same reason both the component and `harness.js` are imported with a
+cache-busting query. In Home Assistant the module URL carries a hash of the file
+and cannot go stale; here there is no hash, and without busting it you edit the
+component, reload, and spend a while studying the old interface. They are
+awaited in order from a single module, because the harness constructs a
+`<light-calibration-panel>` immediately and the component has to have defined it
+first — two separate module scripts do not reliably give that ordering.
+
+Note that `harness.html` itself can still be cached by the browser. If a change
+to the page (rather than to the harness logic) does not show up, hard-reload.
+
 ## What it covers
 
 Buttons along the bottom switch between every state the panel and dialog have:

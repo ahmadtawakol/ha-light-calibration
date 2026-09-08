@@ -111,9 +111,12 @@ unhides it.
 ## Identical fixtures
 
 Two units of the same model are usually wrong in the same way, so there is no
-need to measure both. Calibrate one, then pick it from **Copy calibration
-from** on the other's card — it takes the first light's measurements wholesale,
-which is the difference between eight minutes and none.
+need to measure both. Calibrate one, then copy its profile to the other — the
+difference between eight minutes and none.
+
+Either card will do it. A calibrated light offers **Copy this calibration to**;
+one with no profile offers **Copy calibration from**. Same operation, named for
+whichever light you happen to be looking at.
 
 It replaces rather than merges: copying X onto Y leaves Y matching X, not some
 blend of the two. Only worth doing between fixtures of the same model, since a

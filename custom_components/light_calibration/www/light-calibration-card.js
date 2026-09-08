@@ -707,7 +707,7 @@ class LightCalibrationPanel extends HTMLElement {
       <div class="meta"></div>
       <div class="ref"><div class="picker"></div></div>
       <div class="copy" hidden>
-        <label>Copy calibration from</label>
+        <label class="copylabel"></label>
         <select class="copyfrom"></select>
       </div>
       <div class="row">
@@ -746,23 +746,28 @@ class LightCalibrationPanel extends HTMLElement {
     // merges, so it asks first.
     const copy = el.querySelector(".copyfrom");
     copy.addEventListener("change", () => {
-      const source = copy.value;
+      const other = copy.value;
       copy.value = "";
-      if (!source) return;
-      const src = this._hass.states[source].attributes;
+      if (!other) return;
       const here = this._hass.states[entity].attributes;
-      const summary = src.profile_summary || `${src.stored_points} points`;
-      const mine = here.stored_points > 0
-        ? `\n\n${this._name(here.calibrating)}'s own measurements ` +
-          `(${here.profile_summary}) are discarded.`
+      const there = this._hass.states[other].attributes;
+      // A card with a profile is offering to hand it out; one without is asking
+      // for one. Same operation either way -- see _copyDirection.
+      const giving = here.stored_points > 0;
+      const from = giving ? here : there;
+      const to = giving ? there : here;
+      const losing = to.stored_points > 0
+        ? `\n\n${this._name(to.calibrating)}'s own measurements ` +
+          `(${to.profile_summary}) are discarded.`
         : "";
       if (!window.confirm(
-        `Give ${this._name(here.calibrating)} the calibration measured for ` +
-        `${this._name(src.calibrating)} (${summary})?\n\n` +
+        `Give ${this._name(to.calibrating)} the calibration measured for ` +
+        `${this._name(from.calibrating)} ` +
+        `(${from.profile_summary || from.stored_points + " points"})?\n\n` +
         `Only worth it if they are the same model -- a profile describes one ` +
-        `fixture's particular errors.${mine}`)) return;
+        `fixture's particular errors.${losing}`)) return;
       this._hass.callService("light_calibration", "copy_profile", {
-        entry_id: entry_id, source_entry_id: src.entry_id,
+        entry_id: to.entry_id, source_entry_id: from.entry_id,
       });
     });
 
@@ -772,6 +777,7 @@ class LightCalibrationPanel extends HTMLElement {
       meta: el.querySelector(".meta"),
       clear: el.querySelector(".clear"),
       copyRow: el.querySelector(".copy"),
+      copyLabel: el.querySelector(".copylabel"),
       copy,
       pickerSlot: el.querySelector(".picker"),
       picker: null,
@@ -832,20 +838,32 @@ class LightCalibrationPanel extends HTMLElement {
     // Calibrate just invites a mis-click.
     item.clear.hidden = !(a.stored_points > 0);
 
-    // Only worth showing when there is something to copy from.
-    const sources = calibrationSensors(this._hass).filter(
-      (e) => e !== entity && this._hass.states[e].attributes.stored_points > 0
+    // Reachable from whichever light you happen to be looking at. A calibrated
+    // one offers to hand its profile out; one with nothing offers to take a
+    // profile in. Building only the second half left a calibrated light with no
+    // affordance at all, which is exactly where people go looking.
+    const giving = a.stored_points > 0;
+    const others = calibrationSensors(this._hass).filter(
+      (e) => e !== entity &&
+             (giving || this._hass.states[e].attributes.stored_points > 0)
     );
-    item.copyRow.hidden = sources.length === 0;
-    const key = sources.map((e) => e + ":" + this._hass.states[e].attributes.stored_points).join("|");
-    if (sources.length && item.copyKey !== key) {
+    item.copyRow.hidden = others.length === 0;
+    item.copyLabel.textContent = giving
+      ? "Copy this calibration to" : "Copy calibration from";
+
+    const key = giving + "|" + others.map(
+      (e) => e + ":" + this._hass.states[e].attributes.stored_points).join(",");
+    if (others.length && item.copyKey !== key) {
       item.copyKey = key;
       item.copy.innerHTML =
         `<option value="">Choose a light...</option>` +
-        sources.map((e) => {
-          const sa = this._hass.states[e].attributes;
-          return `<option value="${e}">${this._name(sa.calibrating)} - ` +
-                 `${sa.profile_summary || sa.stored_points + " points"}</option>`;
+        others.map((e) => {
+          const oa = this._hass.states[e].attributes;
+          const summary = oa.profile_summary || `${oa.stored_points} points`;
+          const note = giving
+            ? (oa.stored_points > 0 ? ` - replaces ${summary}` : "")
+            : ` - ${summary}`;
+          return `<option value="${e}">${this._name(oa.calibrating)}${note}</option>`;
         }).join("");
     }
 
