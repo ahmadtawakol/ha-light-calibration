@@ -184,6 +184,12 @@ function hass() {
    strand you on a blank page. */
 history.pushState = () => {};
 
+/* Home Assistant answers hass-more-info by opening the entity's dialog. Nothing
+   here does, so log it -- it is the only way to see that a tile fired the right
+   event for the right light. */
+window.addEventListener("hass-more-info", (e) =>
+  log(`more-info ${e.detail && e.detail.entityId}`));
+
 const panel = document.createElement("light-calibration-panel");
 document.getElementById("mount").appendChild(panel);
 // The panel builds its shadow tree lazily, on the first hass assignment, so

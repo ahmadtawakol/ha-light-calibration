@@ -491,6 +491,8 @@ const ICONS = {
            "9A7,7 0 0,0 12,2M3.28,4L2,5.27L5.04,8.3C5,8.53 5,8.76 5,9C5,11.38 " +
            "6.19,13.47 8,14.74V17A1,1 0 0,0 9,18H14.73L18.73,22L20,20.72L3.28," +
            "4M9,20V21A1,1 0 0,0 10,22H14A1,1 0 0,0 15,21V20H9Z",
+  tune: "M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7" +
+        "V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z",
   eyedropper: "M6.92,19L5,17.08L13.06,9L15,10.94M20.71,5.63L18.37,3.29C18,2.9 " +
               "17.35,2.9 16.96,3.29L13.84,6.41L11.91,4.5L10.5,5.91L11.92,7.33L3," +
               "16.25V21H7.75L16.67,12.08L18.09,13.5L19.5,12.09L17.58,10.17L20.7," +
@@ -637,18 +639,21 @@ const PANEL_STYLE = `
     padding: 16px; color: var(--primary-text-color);
     display: flex; flex-direction: column;
   }
-  /* Measured against home-assistant/frontend: ha-tile-icon, ha-tile-info,
-     ha-tile-container and ha-control-switch. Pixel values are hardcoded with
-     the newer design tokens as fallbacks, since the tokens do not exist on
-     older cores but the resolved values have not moved. */
-  .item { padding: 0; gap: 0; }
+  /* Measured against home-assistant/frontend: ha-tile-icon, ha-tile-info and
+     ha-control-switch. Laid out square rather than in a row, because these sit
+     in a grid of their own rather than in a dashboard column. */
+  .grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .item { padding: 12px; gap: 10px; aspect-ratio: 1; }
+  /* The whole upper area behaves the way a tile does: it opens the light's own
+     more-info dialog. Anything about the calibration has its own button. */
   .tile {
-    display: flex; align-items: center; gap: 10px; width: 100%;
-    min-height: 56px; padding: 0 10px; background: none; border: none;
-    cursor: pointer; font: inherit; color: inherit; text-align: left;
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px; text-align: center;
+    background: none; border: none; padding: 0; cursor: pointer;
+    font: inherit; color: inherit; width: 100%;
   }
   .badge {
-    flex: 0 0 auto; position: relative; width: 36px; height: 36px;
+    flex: 0 0 auto; position: relative; width: 48px; height: 48px;
     border-radius: var(--ha-border-radius-pill, 9999px);
     display: grid; place-items: center; overflow: hidden;
     transition: transform 180ms ease-in-out, color 180ms ease-in-out;
@@ -660,32 +665,48 @@ const PANEL_STYLE = `
   }
   .tile:hover .badge::before { opacity: 0.35; }
   .tile:active .badge { transform: scale(1.2); }
-  .badge svg { width: 24px; height: 24px; fill: currentColor; position: relative; }
-  .text { min-width: 0; display: flex; flex-direction: column;
-          align-items: flex-start; justify-content: center; }
+  .badge svg { width: 28px; height: 28px; fill: currentColor; position: relative; }
+  .text {
+    display: flex; flex-direction: column; align-items: center;
+    width: 100%; min-width: 0;
+  }
   .name {
-    font-size: 14px; font-weight: 500; line-height: 1.6; letter-spacing: 0.1px;
-    color: var(--primary-text-color);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
+    font-size: 14px; font-weight: 500; line-height: 1.3; letter-spacing: 0.1px;
+    color: var(--primary-text-color); width: 100%;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .state {
     font-size: 12px; font-weight: 400; line-height: 1.2; letter-spacing: 0.4px;
-    color: var(--primary-text-color); opacity: 0.75;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;
+    color: var(--primary-text-color); opacity: 0.75; width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .state.warn { color: var(--warning-color, #ffa726); opacity: 1; }
-  .feature { padding: 0 12px 12px; }
-  .feature > * { width: 100%; height: 42px;
-                 border-radius: var(--ha-border-radius-lg, 12px); }
+  .feature { display: flex; gap: 8px; flex: 0 0 auto; }
+  .feature > * {
+    height: 42px; border-radius: var(--ha-border-radius-lg, 12px);
+  }
+  .feature .act, .feature .switch { flex: 1; min-width: 0; }
   .feature > *[hidden] { display: none; }
-  /* ha-control-switch: a full-width track with a half-width sliding thumb, both
-     in the entity's own colour -- the track at 0.2, the thumb solid. It is not
-     a grey-versus-blue switch; position carries the state, not hue. */
+  .feature .details {
+    flex: 0 0 42px; width: 42px; padding: 0; border: none; cursor: pointer;
+    background: rgba(127,127,127,0.16); color: var(--primary-text-color);
+    display: grid; place-items: center; transition: background 180ms;
+  }
+  .feature .details:hover { background: rgba(127,127,127,0.28); }
+  .feature .details svg { width: 20px; height: 20px; fill: currentColor; }
+  /* ha-control-switch: a track with a half-width sliding thumb. Deliberately
+     NOT in the light's colour -- it switches the calibration, not the light,
+     and wearing the light's colour made it read as another light control. */
   .switch {
     position: relative; display: flex; padding: 0; border: none;
     cursor: pointer; overflow: hidden; background: none;
-    transition: box-shadow 180ms ease-in-out;
+    /* --state-inactive-color, not --disabled-color: the latter is #464646 in
+       the dark theme and all but vanishes on a dark card. */
+    color: var(--state-inactive-color, #9e9e9e);
+    transition: color 180ms ease-in-out;
   }
+  .switch.on { color: var(--primary-color); }
   .switch .track {
     position: absolute; inset: 0; border-radius: inherit;
     background-color: currentColor; opacity: 0.2;
@@ -702,6 +723,18 @@ const PANEL_STYLE = `
   /* Fixed white rather than currentColor: currentColor here is the thumb's own
      background, so inheriting it would paint the icon invisible. */
   .switch .thumb svg { width: 20px; height: 20px; fill: #fff; }
+
+  /* One column wide, a square is 300-odd pixels tall with a hole in the middle.
+     Let the card be its own height once it stops sharing a row. */
+  @media (max-width: 480px) {
+    .grid { grid-template-columns: 1fr; }
+    .item { aspect-ratio: auto; }
+    .tile { flex-direction: row; text-align: left; gap: 12px; }
+    .badge { width: 40px; height: 40px; }
+    .badge svg { width: 24px; height: 24px; }
+    .text { align-items: flex-start; }
+    .name { -webkit-line-clamp: 1; }
+  }
   .copy { margin-top: 12px; }
   .copy[hidden] { display: none; }
   label.tiny { display: block; font-size: 0.78rem; margin-bottom: 3px;
@@ -1218,9 +1251,25 @@ class LightCalibrationPanel extends HTMLElement {
           <span class="track"></span>
           <span class="thumb"><svg viewBox="0 0 24 24"><path/></svg></span>
         </button>
+        <button class="details" title="Calibration details"
+                aria-label="Calibration details">
+          <svg viewBox="0 0 24 24"><path d="${ICONS.tune}"/></svg>
+        </button>
       </div>`;
 
-    el.querySelector(".tile").addEventListener(
+    // A tile that looks like Home Assistant's should do what one does: open the
+    // light's own more-info dialog. Calibration has its own button, because
+    // dressing this up as a tile and then hijacking the tap was the confusing
+    // part.
+    el.querySelector(".tile").addEventListener("click", () => {
+      const light = this._lightOf(entity);
+      if (!light) return;
+      this.dispatchEvent(new CustomEvent("hass-more-info", {
+        detail: { entityId: light.entity_id },
+        bubbles: true, composed: true,
+      }));
+    });
+    el.querySelector(".details").addEventListener(
       "click", () => this._openDetails(entity));
     el.querySelector(".act").addEventListener("click", () => {
       this._dialog.hass = this._hass;
@@ -1413,9 +1462,6 @@ class LightCalibrationPanel extends HTMLElement {
     const tint = lightTint(light);
     item.badge.style.color = tint.color;
     item.icon.setAttribute("d", tint.lit ? ICONS.bulb : ICONS.bulbOff);
-    // The switch wears the light's colour in both states, as a tile feature
-    // does -- the thumb's position is what says on or off.
-    item.sw.style.color = tint.color;
     item.swIcon.setAttribute("d", ICONS.eyedropper);
 
     // A tile card's second line is the light's state, and that is what this
