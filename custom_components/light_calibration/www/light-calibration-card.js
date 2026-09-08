@@ -499,6 +499,9 @@ const ICONS = {
            "9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z",
   close: "M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12," +
          "13.41L17.59,19L19,17.59L13.41,12L19,6.41Z",
+  // Material's own filter-chip checkmark, on an 18x18 viewBox rather than 24.
+  tick: "M6.75012 12.1274L3.62262 8.99988L2.55762 10.0574L6.75012 14.2499L15" +
+        ".7501 5.24988L14.6926 4.19238L6.75012 12.1274Z",
   eyedropper: "M6.92,19L5,17.08L13.06,9L15,10.94M20.71,5.63L18.37,3.29C18,2.9 " +
               "17.35,2.9 16.96,3.29L13.84,6.41L11.91,4.5L10.5,5.91L11.92,7.33L3," +
               "16.25V21H7.75L16.67,12.08L18.09,13.5L19.5,12.09L17.58,10.17L20.7," +
@@ -626,43 +629,70 @@ const PANEL_STYLE = `
   .head .back:hover { background: rgba(255,255,255,0.12); }
   .head .back svg { width: 24px; height: 24px; fill: currentColor; }
   .head .grow { flex: 1; }
+  /* Measured against home-assistant/frontend 20260826.6 -- the build core
+     2026.9.1 pins. The search field is an outlined 1px-bordered box, not a
+     shadowed card: ha-input-search, appearance="outlined", 40px tall with an
+     8px radius. The 2026 --ha-* tokens carry a fallback each, since a var()
+     that resolves to nothing takes the whole declaration with it. */
   .toolbar {
-    max-width: 1040px; margin: 0 auto; padding: 16px 24px 0;
-    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    max-width: 1040px; margin: 0 auto; padding: 12px 16px;
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
   }
   .search {
-    flex: 1 1 220px; display: flex; align-items: center; gap: 8px; height: 44px;
-    padding: 0 6px 0 12px; border-radius: var(--ha-border-radius-lg, 12px);
+    flex: 1 1 220px; display: flex; align-items: center; height: 40px;
+    padding: 0 var(--ha-space-2, 8px);
+    border-radius: var(--ha-border-radius-md, 8px);
     background: var(--card-background-color, #fff);
-    box-shadow: var(--ha-card-box-shadow, 0 2px 6px rgba(0,0,0,0.12));
+    border: 1px solid
+      var(--ha-color-border-neutral-quiet, var(--divider-color, #e6e6e6));
+    transition: border-color 150ms ease-in-out;
   }
-  .search > svg { width: 20px; height: 20px; flex: 0 0 auto;
-                  fill: var(--secondary-text-color); }
+  .search:focus-within { border-color: var(--primary-color); }
+  /* 18px, and in full primary text colour -- ha-input styles only the trailing
+     slot as secondary, so the magnifier is not muted. */
+  .search > svg {
+    width: 18px; height: 18px; flex: 0 0 auto;
+    fill: var(--primary-text-color);
+    margin-inline-end: var(--ha-space-3, 12px);
+  }
   .search input {
     flex: 1; min-width: 0; border: none; background: none; outline: none;
-    font: inherit; font-size: 0.95rem; color: var(--primary-text-color);
+    font: inherit; font-size: 14px; color: var(--primary-text-color);
   }
+  .search input::placeholder { color: var(--secondary-text-color, #989898); }
   .search input::-webkit-search-cancel-button { display: none; }
   .search .clearq {
-    flex: 0 0 auto; width: 32px; height: 32px; border: none; background: none;
+    flex: 0 0 auto; width: 24px; height: 24px; border: none; background: none;
+    margin-inline-start: var(--ha-space-3, 12px);
     border-radius: 50%; cursor: pointer; display: grid; place-items: center;
     color: var(--secondary-text-color);
   }
   .search .clearq:hover { background: rgba(127,127,127,0.16); }
   .search .clearq svg { width: 18px; height: 18px; fill: currentColor; }
   .search .clearq[hidden] { display: none; }
+  /* ha-filter-chip geometry: 32px tall, 8px radius, a 1px outline that
+     disappears when selected, and a tinted fill with the label in the accent
+     colour rather than a solid block. HA's own list pages filter through a side
+     pane instead -- but this is one binary choice, not a facet, and a pane for
+     it would be absurd. */
   .chips { display: flex; gap: 8px; flex: 0 0 auto; }
   .chip {
-    border: 1px solid var(--divider-color, #e0e0e0); background: none;
-    color: var(--primary-text-color); font: inherit; font-size: 0.85rem;
-    padding: 8px 14px; border-radius: 18px; cursor: pointer;
-    transition: background 180ms, border-color 180ms, color 180ms;
+    display: flex; align-items: center; gap: 8px; height: 32px;
+    padding: 0 16px; border-radius: var(--ha-border-radius-md, 8px);
+    border: 1px solid var(--outline-color, rgba(127,127,127,0.22));
+    background: none; color: var(--primary-text-color);
+    font: inherit; font-size: 14px; font-weight: 500; letter-spacing: 0.1px;
+    cursor: pointer; transition: background 150ms, border-color 150ms, color 150ms;
   }
   .chip:hover { background: rgba(127,127,127,0.12); }
+  .chip .tick { width: 18px; height: 18px; display: none; fill: currentColor; }
   .chip.on {
-    background: var(--primary-color); border-color: var(--primary-color);
-    color: var(--text-primary-color, #fff);
+    border-color: transparent; color: var(--primary-color);
+    background: var(--ha-color-fill-primary-normal-hover,
+                    color-mix(in srgb, var(--primary-color) 16%, transparent));
+    padding-inline-start: 8px;
   }
+  .chip.on .tick { display: block; }
   .toolbar .addbtn { flex: 0 0 auto; }
   @media (max-width: 700px) {
     .toolbar { padding: 12px 16px 0; }
@@ -931,8 +961,14 @@ class LightCalibrationPanel extends HTMLElement {
           </button>
         </div>
         <div class="chips">
-          <button class="chip on" data-scope="calibrated">Calibrated</button>
-          <button class="chip" data-scope="all">All lights</button>
+          <button class="chip on" data-scope="calibrated">
+            <svg class="tick" viewBox="0 0 18 18"><path d="${ICONS.tick}"/></svg>
+            <span>Calibrated</span>
+          </button>
+          <button class="chip" data-scope="all">
+            <svg class="tick" viewBox="0 0 18 18"><path d="${ICONS.tick}"/></svg>
+            <span>All lights</span>
+          </button>
         </div>
         <button class="primary addbtn" data-add>Calibrate a light</button>
       </div>
@@ -1020,6 +1056,7 @@ class LightCalibrationPanel extends HTMLElement {
     this._scope = "calibrated";
     this._query = "";
     const q = wrap.querySelector("#q");
+    this._search = q;
     const clearq = wrap.querySelector(".clearq");
     q.addEventListener("input", () => {
       this._query = q.value.trim().toLowerCase();
@@ -1127,6 +1164,11 @@ class LightCalibrationPanel extends HTMLElement {
 
   _render() {
     const rows = this._rows();
+    const total = this._scope === "all"
+      ? Object.keys(this._hass.states).filter((e) => e.startsWith("light.")).length
+      : calibrationSensors(this._hass).length;
+    this._search.placeholder =
+      `Search ${total} light${total === 1 ? "" : "s"}`;
     // The sensor is part of the key: a light gaining or losing a calibration
     // entry changes what its card is, not just what it says.
     const key = this._scope + "|" +
