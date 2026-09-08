@@ -44,6 +44,10 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 # The calibration controls themselves live in the dialog, not as entities.
 PLATFORMS = [Platform.LIGHT, Platform.SENSOR, Platform.SWITCH]
 
+# Where the currently-served module URL is remembered, so a reload can retire
+# the previous one. Not under hass.data[DOMAIN]: that is keyed by entry id.
+DATA_CARD_URL = f"{DOMAIN}_card_url"
+
 CARD_BASE = "/light_calibration"
 CARD_FILE = "light-calibration-card.js"
 PANEL_URL_PATH = "light-calibration"
@@ -104,6 +108,17 @@ async def _async_register_card(hass: HomeAssistant) -> str:
         )
     except RuntimeError:
         pass  # already registered (a reload)
+
+    # Retire the previous build's URL. These are injected into every page, and
+    # the set is never pruned, so without this a reload leaves both the old and
+    # the new module loading -- and whichever wins the race registers the custom
+    # elements, since a name cannot be claimed twice. Reloading the entry would
+    # then be a coin flip between the new interface and the old one.
+    previous = hass.data.get(DATA_CARD_URL)
+    if previous and previous != url:
+        frontend.remove_extra_js_url(hass, previous)
+        _LOGGER.debug("Retired the previous frontend at %s", previous)
+    hass.data[DATA_CARD_URL] = url
     frontend.add_extra_js_url(hass, url)
     _LOGGER.debug("Registered calibration frontend at %s", url)
     await _async_register_panel(hass, url)

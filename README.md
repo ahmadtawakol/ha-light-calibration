@@ -196,3 +196,8 @@ uv run --with pytest pytest tests/
   name cannot be redefined once a page has claimed it. A tab left open across an
   update keeps rendering the old interface — which looks exactly like an update
   that did nothing. The console says so if it happens.
+- **A frontend-only update does not need a Home Assistant restart.** Settings →
+  Devices & services → Light Calibration → ⋮ → **Reload** re-serves the module
+  at its new address and re-registers the panel; reload the browser tab after.
+  A change to the Python does need a restart, because Python will not re-read a
+  module it has already imported — no custom integration escapes that.
