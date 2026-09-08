@@ -493,6 +493,12 @@ const ICONS = {
            "4M9,20V21A1,1 0 0,0 10,22H14A1,1 0 0,0 15,21V20H9Z",
   tune: "M3,17V19H9V17H3M3,5V7H13V5H3M13,21V19H21V17H13V15H11V21H13M7,9V11H3V13H7" +
         "V15H9V9H7M21,13V11H11V13H21M15,9H17V7H21V5H17V3H15V9Z",
+  magnify: "M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71," +
+           "14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11," +
+           "16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5," +
+           "9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z",
+  close: "M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12," +
+         "13.41L17.59,19L19,17.59L13.41,12L19,6.41Z",
   eyedropper: "M6.92,19L5,17.08L13.06,9L15,10.94M20.71,5.63L18.37,3.29C18,2.9 " +
               "17.35,2.9 16.96,3.29L13.84,6.41L11.91,4.5L10.5,5.91L11.92,7.33L3," +
               "16.25V21H7.75L16.67,12.08L18.09,13.5L19.5,12.09L17.58,10.17L20.7," +
@@ -620,19 +626,49 @@ const PANEL_STYLE = `
   .head .back:hover { background: rgba(255,255,255,0.12); }
   .head .back svg { width: 24px; height: 24px; fill: currentColor; }
   .head .grow { flex: 1; }
-  /* The one thing you come here to do that is not about a light already on the
-     page, so it lives in the chrome rather than at the bottom of the list. */
-  .head .headadd {
-    background: rgba(255,255,255,0.16); border: none; color: inherit;
-    font: inherit; font-size: 0.9rem; cursor: pointer; border-radius: 20px;
-    padding: 7px 14px 7px 10px; display: flex; align-items: center; gap: 6px;
-    flex: 0 0 auto;
+  .toolbar {
+    max-width: 1040px; margin: 0 auto; padding: 16px 24px 0;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
   }
-  .head .headadd:hover { background: rgba(255,255,255,0.28); }
-  .head .headadd svg { width: 18px; height: 18px; fill: currentColor; }
-  @media (max-width: 480px) {
-    .head .headadd span { display: none; }
-    .head .headadd { padding: 8px; border-radius: 50%; }
+  .search {
+    flex: 1 1 220px; display: flex; align-items: center; gap: 8px; height: 44px;
+    padding: 0 6px 0 12px; border-radius: var(--ha-border-radius-lg, 12px);
+    background: var(--card-background-color, #fff);
+    box-shadow: var(--ha-card-box-shadow, 0 2px 6px rgba(0,0,0,0.12));
+  }
+  .search > svg { width: 20px; height: 20px; flex: 0 0 auto;
+                  fill: var(--secondary-text-color); }
+  .search input {
+    flex: 1; min-width: 0; border: none; background: none; outline: none;
+    font: inherit; font-size: 0.95rem; color: var(--primary-text-color);
+  }
+  .search input::-webkit-search-cancel-button { display: none; }
+  .search .clearq {
+    flex: 0 0 auto; width: 32px; height: 32px; border: none; background: none;
+    border-radius: 50%; cursor: pointer; display: grid; place-items: center;
+    color: var(--secondary-text-color);
+  }
+  .search .clearq:hover { background: rgba(127,127,127,0.16); }
+  .search .clearq svg { width: 18px; height: 18px; fill: currentColor; }
+  .search .clearq[hidden] { display: none; }
+  .chips { display: flex; gap: 8px; flex: 0 0 auto; }
+  .chip {
+    border: 1px solid var(--divider-color, #e0e0e0); background: none;
+    color: var(--primary-text-color); font: inherit; font-size: 0.85rem;
+    padding: 8px 14px; border-radius: 18px; cursor: pointer;
+    transition: background 180ms, border-color 180ms, color 180ms;
+  }
+  .chip:hover { background: rgba(127,127,127,0.12); }
+  .chip.on {
+    background: var(--primary-color); border-color: var(--primary-color);
+    color: var(--text-primary-color, #fff);
+  }
+  .toolbar .addbtn { flex: 0 0 auto; }
+  @media (max-width: 700px) {
+    .toolbar { padding: 12px 16px 0; }
+    .search { flex-basis: 100%; }
+    .chips { flex: 1; }
+    .toolbar .addbtn { flex: 0 0 auto; }
   }
   .body { padding: 24px; max-width: 1040px; margin: 0 auto; }
   .grid {
@@ -651,6 +687,11 @@ const PANEL_STYLE = `
      in a grid of their own rather than in a dashboard column. */
   .grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
   .item { padding: 12px; gap: 10px; aspect-ratio: 1; }
+  /* A card offering a profile to copy carries one control more than a square
+     has room for. Only that card grows; the grid row keeps them level. */
+  .item:has(.copy:not([hidden])) { aspect-ratio: auto; }
+  .copy[hidden] { display: none; }
+  .copy select { font-size: 0.82rem; padding: 7px; }
   /* The whole upper area behaves the way a tile does: it opens the light's own
      more-info dialog. Anything about the calibration has its own button. */
   .tile {
@@ -694,7 +735,9 @@ const PANEL_STYLE = `
     height: 42px; border-radius: var(--ha-border-radius-lg, 12px);
   }
   .feature .act, .feature .switch { flex: 1; min-width: 0; }
-  .feature > *[hidden] { display: none; }
+  /* Out-specifies .feature .details, which sets display:grid -- otherwise a
+     hidden button keeps its display and renders anyway. */
+  .item .feature > *[hidden] { display: none; }
   .feature .details {
     flex: 0 0 42px; width: 42px; padding: 0; border: none; cursor: pointer;
     background: rgba(127,127,127,0.16); color: var(--primary-text-color);
@@ -877,10 +920,21 @@ class LightCalibrationPanel extends HTMLElement {
           <svg viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20v-2z"/></svg>
         </button>
         <span class="grow">Light Calibration</span>
-        <button class="headadd" data-add>
-          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-          <span>Calibrate a light</span>
-        </button>
+      </div>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24"><path d="${ICONS.magnify}"/></svg>
+          <input type="search" id="q" placeholder="Search lights"
+                 autocomplete="off" spellcheck="false">
+          <button class="clearq" hidden aria-label="Clear search">
+            <svg viewBox="0 0 24 24"><path d="${ICONS.close}"/></svg>
+          </button>
+        </div>
+        <div class="chips">
+          <button class="chip on" data-scope="calibrated">Calibrated</button>
+          <button class="chip" data-scope="all">All lights</button>
+        </div>
+        <button class="primary addbtn" data-add>Calibrate a light</button>
       </div>
       <div class="body" id="body"></div>`;
     const adder = document.createElement("div");
@@ -963,6 +1017,27 @@ class LightCalibrationPanel extends HTMLElement {
     adder.querySelector('[data-act="go"]').addEventListener(
       "click", () => this._addNext());
     this._body = wrap.querySelector("#body");
+    this._scope = "calibrated";
+    this._query = "";
+    const q = wrap.querySelector("#q");
+    const clearq = wrap.querySelector(".clearq");
+    q.addEventListener("input", () => {
+      this._query = q.value.trim().toLowerCase();
+      clearq.hidden = !q.value;
+      this._render();
+    });
+    clearq.addEventListener("click", () => {
+      q.value = ""; this._query = ""; clearq.hidden = true; q.focus(); this._render();
+    });
+    for (const chip of wrap.querySelectorAll(".chip")) {
+      chip.addEventListener("click", () => {
+        this._scope = chip.dataset.scope;
+        for (const other of wrap.querySelectorAll(".chip")) {
+          other.classList.toggle("on", other === chip);
+        }
+        this._render();
+      });
+    }
     wrap.querySelector(".back").addEventListener("click", () => this._goBack());
     this._pickerReady = loadEntityPicker();
     // The add buttons are written into .body as markup whenever the list is
@@ -988,64 +1063,106 @@ class LightCalibrationPanel extends HTMLElement {
     );
   }
 
-  _render() {
-    let sensors = calibrationSensors(this._hass);
+  /* One row per light shown on the page. The default scope is the lights this
+     integration already stands in front of; "All lights" widens it to every
+     light in Home Assistant, so calibrating a new one is a matter of finding it
+     here rather than adding it somewhere else first. */
+  _rows() {
+    const byLight = new Map();
+    const displaced = new Set();
+    for (const sensor of calibrationSensors(this._hass)) {
+      const behind = this._hass.states[sensor].attributes.calibrating || "";
+      displaced.add(behind);
+      byLight.set(behind.replace(/_raw$/, ""), sensor);
+    }
+
+    let ids = [...byLight.keys()];
+    if (this._scope === "all") {
+      // Every light except the displaced fixtures, which are the uncorrected
+      // half of a light already on the page.
+      ids = Object.keys(this._hass.states).filter(
+        (e) => e.startsWith("light.") && !displaced.has(e));
+    }
+
+    // Arrived from an entry's Configure button: show just that light.
     const scoped = this._scopedEntryId();
     if (scoped) {
-      const only = sensors.filter(
-        (e) => this._hass.states[e].attributes.entry_id === scoped
-      );
-      if (only.length) sensors = only;
+      const only = ids.filter((id) => {
+        const sensor = byLight.get(id);
+        return sensor && this._hass.states[sensor].attributes.entry_id === scoped;
+      });
+      if (only.length) ids = only;
     }
 
-    if (!sensors.length) {
-      if (this._empty !== true) {
-        this._empty = true;
-        this._items.clear();
-        this._body.innerHTML =
-          `<div class="item empty">
-             <h3>No lights calibrated yet</h3>
-             <p>Pick a light you trust as the reference and a light that doesn't
-             match it, and you'll be matching them by eye a few seconds later.</p>
-           </div>
-           <div class="add"><button class="primary" data-add>Calibrate a light</button></div>`;
-      }
-      return;
+    if (this._query) {
+      ids = ids.filter(
+        (id) => `${this._name(id)} ${id}`.toLowerCase().includes(this._query));
     }
-    this._empty = false;
 
-    // Rebuild only when the set of calibrated lights changes -- never while
-    // someone is interacting with a picker.
-    const key = sensors.join("|");
+    return ids
+      .map((light) => ({ light, sensor: byLight.get(light) || null }))
+      .sort((x, y) => this._name(x.light).localeCompare(this._name(y.light)));
+  }
+
+  _emptyMarkup() {
+    if (this._query) {
+      return `<div class="item empty">
+                <h3>Nothing matches "${this._query.replace(/[<&]/g, "")}"</h3>
+                <p>${this._scope === "calibrated"
+                  ? "Only calibrated lights are being shown. Switch to " +
+                    "<b>All lights</b> to search everything."
+                  : "No light in Home Assistant has that name."}</p>
+              </div>`;
+    }
+    if (this._scope === "calibrated") {
+      return `<div class="item empty">
+                <h3>No lights calibrated yet</h3>
+                <p>Switch to <b>All lights</b> and pick one that doesn't look
+                right, or press <b>Calibrate a light</b>.</p>
+              </div>`;
+    }
+    return `<div class="item empty"><h3>No lights</h3>
+            <p>Home Assistant has no light entities.</p></div>`;
+  }
+
+  _render() {
+    const rows = this._rows();
+    // The sensor is part of the key: a light gaining or losing a calibration
+    // entry changes what its card is, not just what it says.
+    const key = this._scope + "|" +
+      rows.map((r) => `${r.light}:${r.sensor || ""}`).join(",");
     if (key !== this._key) {
       this._key = key;
       this._items.clear();
       this._body.innerHTML = "";
-      const grid = document.createElement("div");
-      grid.className = "grid";
-      for (const entity of sensors) {
-        const item = this._buildItem(entity);
-        this._items.set(entity, item);
-        grid.appendChild(item.el);
+      if (!rows.length) {
+        this._body.innerHTML = this._emptyMarkup();
+      } else {
+        const grid = document.createElement("div");
+        grid.className = "grid";
+        for (const row of rows) {
+          const item = this._buildItem(row);
+          this._items.set(row.light, item);
+          grid.appendChild(item.el);
+        }
+        this._body.appendChild(grid);
       }
-      this._body.appendChild(grid);
-
     }
-    for (const [entity, item] of this._items) this._updateItem(entity, item);
+    for (const [, item] of this._items) this._updateItem(item);
     if (this._details.classList.contains("open")) this._renderDetails();
 
     // A light that has just been added has no profile yet -- drop straight into
-    // calibration rather than making them find the button. Keyed on "has no
-    // profile", not "is the only light", which is what broke this before.
+    // calibration rather than making them find the button.
     if (!this._autoOpened) {
-      const fresh = sensors.find((e) => {
-        const a = this._hass.states[e].attributes;
+      const fresh = rows.find((r) => {
+        if (!r.sensor) return false;
+        const a = this._hass.states[r.sensor].attributes;
         return !a.active && a.stored_points === 0;
       });
       if (fresh) {
         this._autoOpened = true;
         this._dialog.hass = this._hass;
-        this._dialog.open(fresh);
+        this._dialog.open(fresh.sensor);
       }
     }
   }
@@ -1054,9 +1171,10 @@ class LightCalibrationPanel extends HTMLElement {
      integration owns both ends of it: the form is always the same two lights.
      So the panel asks for them here and submits, instead of sending people out
      to Settings, through a flow dialog, and back again to start calibrating. */
-  async _openAdd() {
-    this._addPicked = ["", ""];
-    this._addStep = 0;
+  async _openAdd(preTarget) {
+    // Started from a light's own card, the first question is already answered.
+    this._addPicked = [preTarget || "", ""];
+    this._addStep = preTarget ? 1 : 0;
     this._setAddError("");
     this._adder.classList.add("open");
     await this._renderAddStep();
@@ -1237,11 +1355,11 @@ class LightCalibrationPanel extends HTMLElement {
     return entityId.replace(/^[^.]+\./, "").replace(/_raw$/, "").replace(/_/g, " ");
   }
 
-  /* Shaped like a Home Assistant tile card, because that is what the rest of
-     the interface a user came from looks like: a coloured icon badge carrying
-     the light's real state, the name, a line of status, and one feature row.
-     Everything you might change is behind the card, in Details. */
-  _buildItem(entity) {
+  /* Shaped like a Home Assistant tile card, because that is what the interface
+     a user came from looks like. A row is a light, which may or may not have a
+     calibration entry behind it -- an uncalibrated one is offered the way to
+     get one, and nothing else. */
+  _buildItem(row) {
     const el = document.createElement("div");
     el.className = "item";
     el.innerHTML = `
@@ -1252,6 +1370,9 @@ class LightCalibrationPanel extends HTMLElement {
           <span class="state"></span>
         </span>
       </button>
+      <div class="copy" hidden>
+        <select class="copyfrom"></select>
+      </div>
       <div class="feature">
         <button class="primary act"></button>
         <button class="switch" role="switch" aria-label="Calibration">
@@ -1265,30 +1386,37 @@ class LightCalibrationPanel extends HTMLElement {
       </div>`;
 
     // A tile that looks like Home Assistant's should do what one does: open the
-    // light's own more-info dialog. Calibration has its own button, because
-    // dressing this up as a tile and then hijacking the tap was the confusing
-    // part.
+    // light's own more-info dialog. Calibration has its own controls below.
     el.querySelector(".tile").addEventListener("click", () => {
-      const light = this._lightOf(entity);
-      if (!light) return;
       this.dispatchEvent(new CustomEvent("hass-more-info", {
-        detail: { entityId: light.entity_id },
+        detail: { entityId: row.light },
         bubbles: true, composed: true,
       }));
     });
-    el.querySelector(".details").addEventListener(
-      "click", () => this._openDetails(entity));
     el.querySelector(".act").addEventListener("click", () => {
-      this._dialog.hass = this._hass;
-      this._dialog.open(entity);
+      if (item.row.sensor) {
+        this._dialog.hass = this._hass;
+        this._dialog.open(item.row.sensor);
+        return;
+      }
+      // No entry yet: the light is already chosen, so the add flow only has to
+      // ask what it should match.
+      this._openAdd(row.light);
     });
+    el.querySelector(".details").addEventListener(
+      "click", () => item.row.sensor && this._openDetails(item.row.sensor));
     el.querySelector(".switch").addEventListener("click", () => {
+      if (!item.row.sensor) return;
       this._hass.callService("switch", "toggle",
-        { entity_id: entity.replace(/^sensor\./, "switch.") });
+        { entity_id: item.row.sensor.replace(/^sensor\./, "switch.") });
     });
+    const copy = el.querySelector(".copyfrom");
+    copy.addEventListener(
+      "change", () => item.row.sensor && this._copyFrom(item.row.sensor, copy));
 
-    return {
+    const item = {
       el,
+      row,
       icon: el.querySelector(".badge path"),
       badge: el.querySelector(".badge"),
       name: el.querySelector(".name"),
@@ -1296,7 +1424,11 @@ class LightCalibrationPanel extends HTMLElement {
       act: el.querySelector(".act"),
       sw: el.querySelector(".switch"),
       swIcon: el.querySelector(".thumb path"),
+      details: el.querySelector(".details"),
+      copyRow: el.querySelector(".copy"),
+      copy,
     };
+    return item;
   }
 
   /* Only offered on a light with nothing to lose. Once one is calibrated,
@@ -1456,15 +1588,16 @@ class LightCalibrationPanel extends HTMLElement {
     d.querySelector(".dcal").textContent = calibrated ? "Fine-tune" : "Calibrate";
   }
 
-  _updateItem(entity, item) {
-    const st = this._hass.states[entity];
-    const a = st.attributes;
-    const calibrated = a.stored_points > 0;
-    const light = this._lightOf(entity);
-    const sw = this._hass.states[entity.replace(/^sensor\./, "switch.")];
+  _updateItem(item) {
+    const { light: lightId, sensor } = item.row;
+    const light = this._hass.states[lightId];
+    const a = sensor ? this._hass.states[sensor].attributes : null;
+    const calibrated = !!(a && a.stored_points > 0);
+    const sw = sensor
+      ? this._hass.states[sensor.replace(/^sensor\./, "switch.")] : null;
     const on = sw && sw.state === "on";
 
-    item.name.textContent = this._name(a.calibrating) || entity;
+    item.name.textContent = this._name(lightId);
 
     const tint = lightTint(light);
     item.badge.style.color = tint.color;
@@ -1472,27 +1605,39 @@ class LightCalibrationPanel extends HTMLElement {
     item.swIcon.setAttribute("d", ICONS.eyedropper);
 
     // A tile card's second line is the light's state, and that is what this
-    // shows. The calibration only gets a word when something is worth saying --
-    // a run in progress, nothing measured, or a profile sitting switched off.
-    // How much was measured is a Details question, not a glance question.
+    // shows. The calibration only gets a word when something is worth saying.
     const lightState = !light || light.state === "unavailable"
       ? "Unavailable"
       : light.state === "on" ? describeLight(light) : "Off";
-    const note = a.active ? st.state
+    const note = a && a.active ? this._hass.states[sensor].state
+      : !sensor ? null
       : !calibrated ? "not calibrated"
       : !on ? "correction off"
       : null;
     item.state.textContent = note ? `${lightState} \u00b7 ${note}` : lightState;
-    item.state.classList.toggle("warn", calibrated && !on && !a.active);
+    item.state.classList.toggle("warn", calibrated && !on && !(a && a.active));
 
-    // A toggle needs something to toggle. Until a light has been measured the
-    // useful action is measuring it.
+    // A toggle needs something to toggle, and there is nothing to look at in
+    // calibration details until something has been measured.
     item.act.hidden = calibrated;
     item.sw.hidden = !calibrated;
+    item.details.hidden = !calibrated;
     item.act.textContent = "Calibrate";
     item.sw.setAttribute("aria-checked", on ? "true" : "false");
     item.sw.title = on ? "Calibration on" : "Calibration off";
     item.sw.classList.toggle("on", !!on);
+
+    // Copying is the alternative to measuring, so it belongs beside Calibrate
+    // on a light that has nothing yet -- but only once there is an entry to
+    // copy into. Once calibrated it moves into Details.
+    const sources = sensor && !calibrated ? this._copySources(sensor) : [];
+    item.copyRow.hidden = sources.length === 0;
+    const key = sources.map(
+      (e) => e + ":" + this._hass.states[e].attributes.stored_points).join(",");
+    if (sources.length && item.copyKey !== key) {
+      item.copyKey = key;
+      this._fillCopyOptions(item.copy, sources);
+    }
   }
 
 }
